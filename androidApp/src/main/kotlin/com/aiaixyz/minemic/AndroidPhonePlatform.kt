@@ -1,0 +1,158 @@
+package com.aiaixyz.minemic
+
+import android.Manifest
+import android.app.*
+import android.content.*
+import android.content.pm.PackageManager
+import android.media.*
+import android.net.nsd.*
+import android.os.*
+import androidx.core.content.ContextCompat
+import com.aiaixyz.minemic.connection.*
+import java.net.*
+import java.io.ByteArrayOutputStream
+import java.security.SecureRandom
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+
+class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
+    private val nsd = context.getSystemService(NsdManager::class.java)
+    private val main = Handler(Looper.getMainLooper())
+    private val network = Executors.newSingleThreadExecutor { Thread(it, "MineMic-control").apply { isDaemon = true } }
+    private val generation = AtomicInteger()
+    @Volatile private var tcp: Socket? = null
+    @Volatile private var udp: DatagramSocket? = null
+    private var listener: NsdManager.DiscoveryListener? = null
+    private var discoveryEpoch = 0
+    private val recording = AtomicBoolean(false)
+    @Volatile private var recorder: AudioRecord? = null
+    private var captureThread: Thread? = null
+    override fun deviceName() = Build.MODEL.take(64)
+    override fun randomBytes(count: Int) = ByteArray(count).also { SecureRandom().nextBytes(it) }
+    override fun hmac(body: ByteArray, key: ByteArray): ByteArray = Mac.getInstance("HmacSHA256").run {
+        init(SecretKeySpec(key, "HmacSHA256")); doFinal(body)
+    }
+    @Suppress("DEPRECATION")
+    override fun discover(onFound: (LanComputer) -> Unit, onError: (String) -> Unit) {
+        main.post {
+            stopDiscoveryOnMain()
+            val epoch = discoveryEpoch
+            val queued = ArrayDeque<NsdServiceInfo>()
+            var resolving = false
+            fun resolveNext() {
+                if (epoch != discoveryEpoch || resolving || queued.isEmpty()) return
+                resolving = true
+                nsd.resolveService(queued.removeFirst(), object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(info: NsdServiceInfo, error: Int) { main.post { resolving = false; resolveNext() } }
+                    override fun onServiceResolved(info: NsdServiceInfo) { main.post {
+                        if (epoch == discoveryEpoch) {
+                            val host = info.host?.hostAddress
+                            if (host != null && Wire.validIpv4(host)) onFound(LanComputer(host, info.port, info.serviceName))
+                        }
+                        resolving = false; resolveNext()
+                    } }
+                })
+            }
+            val value = object : NsdManager.DiscoveryListener {
+                override fun onDiscoveryStarted(type: String) {}
+                override fun onDiscoveryStopped(type: String) {}
+                override fun onStopDiscoveryFailed(type: String, code: Int) {}
+                override fun onStartDiscoveryFailed(type: String, code: Int) { if (epoch == discoveryEpoch) onError("无法发现局域网 PC：$code") }
+                override fun onServiceLost(info: NsdServiceInfo) {}
+                override fun onServiceFound(info: NsdServiceInfo) { main.post {
+                    if (epoch == discoveryEpoch && queued.size < 16 && info.serviceType.contains("_minemic._tcp")) {
+                        queued.addLast(info); resolveNext()
+                    }
+                } }
+            }
+            listener = value
+            try { nsd.discoverServices("_minemic._tcp.", NsdManager.PROTOCOL_DNS_SD, value) }
+            catch (e: Exception) { onError(e.message ?: "发现失败") }
+        }
+    }
+    private fun stopDiscoveryOnMain() {
+        discoveryEpoch++
+        listener?.let { runCatching { nsd.stopServiceDiscovery(it) } }; listener = null
+    }
+    override fun stopDiscovery() { main.post { stopDiscoveryOnMain() } }
+    override fun openControl(host: String, port: Int, onReady: () -> Unit, onLine: (String) -> Unit, onClosed: () -> Unit, onError: (String) -> Unit) {
+        closeControl()
+        val epoch = generation.get()
+        // One reader per live attempt; closing the socket interrupts reads immediately.
+        Thread({
+            val socket = Socket()
+            try {
+                synchronized(this) {
+                    if (epoch != generation.get()) { socket.close(); return@Thread }
+                    tcp = socket
+                }
+                socket.tcpNoDelay = true; socket.connect(InetSocketAddress(host, port), 2500)
+                if (epoch != generation.get()) return@Thread
+                onReady()
+                val input = socket.getInputStream(); val line = ByteArrayOutputStream(1024)
+                while (epoch == generation.get()) {
+                    val byte = input.read()
+                    if (byte < 0) break
+                    if (byte == 10) { onLine(line.toByteArray().toString(Charsets.UTF_8)); line.reset() }
+                    else { if (line.size() >= 1024) error("PC 响应过长"); line.write(byte) }
+                }
+                if (epoch == generation.get()) onClosed()
+            } catch (e: Exception) { if (epoch == generation.get()) onError(e.message ?: "连接异常") }
+            finally { runCatching { socket.close() } }
+        }, "MineMic-reader").apply { isDaemon = true; start() }
+    }
+    override fun sendControl(line: String) {
+        val socket = tcp; val epoch = generation.get()
+        network.execute { if (epoch == generation.get()) runCatching { socket?.getOutputStream()?.write((line + "\n").toByteArray()) } }
+    }
+    @Synchronized override fun closeControl() { generation.incrementAndGet(); val old = tcp; tcp = null; runCatching { old?.close() } }
+    override fun openAudio(host: String, port: Int) {
+        closeAudio()
+        udp = DatagramSocket().apply { connect(InetAddress.getByName(host), port) }
+    }
+    override fun sendAudio(bytes: ByteArray) { runCatching { udp?.send(DatagramPacket(bytes, bytes.size)) } }
+    override fun closeAudio() { udp?.close(); udp = null }
+    override fun startAudio(onFrame: (ByteArray) -> Unit, onError: (String) -> Unit) {
+        stopAudio()
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            onError("请先允许麦克风权限"); return
+        }
+        try { ContextCompat.startForegroundService(context, Intent(context, MicForegroundService::class.java)) }
+        catch (e: Exception) { onError("请回到前台启用麦克风：${e.message}"); return }
+        recording.set(true)
+        captureThread = Thread({
+            var audio: AudioRecord? = null
+            try {
+                val minimum = AudioRecord.getMinBufferSize(48000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                check(minimum > 0) { "设备不支持 48 kHz 录音" }
+                audio = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 48000, AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 3840))
+                recorder = audio
+                check(audio.state == AudioRecord.STATE_INITIALIZED) { "录音设备初始化失败" }
+                audio.startRecording()
+                check(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "麦克风被其他应用占用" }
+                val frame = ByteArray(960); var offset = 0
+                while (recording.get()) {
+                    val count = audio.read(frame, offset, frame.size - offset, AudioRecord.READ_BLOCKING)
+                    if (!recording.get()) break
+                    check(count > 0) { "录音读取失败：$count" }
+                    offset += count
+                    if (offset == frame.size) { onFrame(frame.copyOf()); offset = 0 }
+                }
+            } catch (e: Exception) { if (recording.getAndSet(false)) onError(e.message ?: "录音失败") }
+            finally {
+                runCatching { audio?.stop() }; audio?.release(); recorder = null
+                context.stopService(Intent(context, MicForegroundService::class.java))
+            }
+        }, "MineMic-microphone").apply { start() }
+    }
+    override fun stopAudio() {
+        recording.set(false); runCatching { recorder?.stop() }
+        val old = captureThread; captureThread = null
+        if (old != null && old != Thread.currentThread()) old.join(1000)
+        context.stopService(Intent(context, MicForegroundService::class.java))
+    }
+}

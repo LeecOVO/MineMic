@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>NSMicrophoneUsageDescription</key>
+        <string>MineMic 将手机麦克风音频传输到你连接的电脑。</string>
+        <key>NSLocalNetworkUsageDescription</key>
+        <string>MineMic 需要查找并连接同一局域网内的电脑。</string>
+        <key>NSBonjourServices</key>
+        <array><string>_minemic._tcp</string></array>
+        <key>UIBackgroundModes</key>
+        <array><string>audio</string></array>
+        <key>CADisableMinimumFrameDurationOnPhone</key>
+        <true/>
+    </dict>
+</plist>
