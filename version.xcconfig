@@ -1,0 +1,4 @@
+// MineMic mobile version source. Increment the prerelease iteration for each distributed development change.
+MINEMIC_VERSION=0.0.1-ea.1
+MARKETING_VERSION=0.0.1
+CURRENT_PROJECT_VERSION=4

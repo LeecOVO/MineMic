@@ -1,5 +1,7 @@
 # MineMic
 
+**0.0.1-ea.1 · Early Access · 首个可用版本**。首个可用的 EA 版本，仍处于初始开发阶段。版本规则见 [版本约定](docs/VERSIONING.md)。
+
 将 Android/iPhone 当作电脑麦克风的手机端，采用 Kotlin Multiplatform + Compose Multiplatform。电脑端是相邻的独立 C++/Qt 项目 **MineMic-PC**，两个目录分别管理 Git，不互相嵌套。
 
 ## 连接方式
@@ -44,9 +46,11 @@ MINEMIC_PC_TEST_SERVER=/absolute/path/MineMic-PC/build-desktop/minemic_network_t
 
 ## 当前验证边界
 
-2026-10-21：Android Debug APK、Kotlin iOS Simulator framework、完整 iOS 模拟器应用构建通过；Kotlin JVM 6 项测试通过（包括真实 C++ 接收器互通）；PC 回归 5 项通过。系统 Bonjour 在本机发现 PC 服务成功。
+2026-10-21：Android Debug APK、Kotlin iOS Simulator framework、完整 iOS 模拟器应用构建通过；Kotlin JVM 7 项测试通过（包括真实 C++ 接收器互通）；PC 回归 5 项通过。系统 Bonjour 在本机发现 PC 服务成功。
 
-尚未完成 Windows 实机/单 EXE、真实 Android/iPhone 麦克风到虚拟声卡、后台锁屏长时稳定性及 CPU/内存/延迟测量。PC 仍依赖独立虚拟声卡，本仓库没有自有驱动。
+用户已在真实 iPhone → Windows 连接中反馈声音断续、延迟大。已修复 iOS 批量采集与发送队列过小导致的丢帧，并增加原生采集测试；用户已确认卡顿验收通过。具体改动、验证方法和限制见 [音频链路修复记录](docs/AUDIO_PIPELINE.md)。
+
+用户已确认本次 iPhone → Windows 卡顿修复验收通过；尚无量化端到端延迟、后台锁屏长时稳定性及 CPU/内存结论，其他设备和虚拟声卡组合仍需测试。PC 仍依赖独立虚拟声卡，本仓库没有自有驱动。
 
 ## 许可证
 

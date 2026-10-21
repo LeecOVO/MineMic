@@ -145,7 +145,10 @@ class MicController(private val platform: PhonePlatform) {
     private fun beginAudio() {
         stopCapture()
         val s = session ?: return
-        val frames = Channel<Pair<Long, ByteArray>>(4, BufferOverflow.DROP_OLDEST)
+        // Native capture may deliver several 10 ms frames in one callback. A 40 ms
+        // channel discarded valid iOS batches before this coroutine could run.
+        // Keep at most 160 ms; on sustained overload prefer recent speech.
+        val frames = Channel<Pair<Long, ByteArray>>(16, BufferOverflow.DROP_OLDEST)
         var captureSequence = 0L
         audioJob = scope.launch {
             for ((sequence, pcm) in frames) {

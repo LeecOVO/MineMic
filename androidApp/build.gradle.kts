@@ -28,8 +28,8 @@ android {
         applicationId = "com.aiaixyz.minemic"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = rootProject.extra["mineMicBuild"] as Int
+        versionName = rootProject.extra["mineMicVersion"] as String
     }
     packaging {
         resources {

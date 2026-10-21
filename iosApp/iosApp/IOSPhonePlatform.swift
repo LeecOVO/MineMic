@@ -4,21 +4,23 @@ import AVFoundation
 import CryptoKit
 import Security
 import Shared
+import os
 
 final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate, NetServiceDelegate {
-    private let queue = DispatchQueue(label: "MineMic.network")
-    private let capture = DispatchQueue(label: "MineMic.capture")
+    private let queue = DispatchQueue(label: "MineMic.network", qos: .userInteractive)
+    private let capture = DispatchQueue(label: "MineMic.capture", qos: .userInteractive)
     private var browser: NetServiceBrowser?
     private var services: [NetService] = []
     private var found: ((LanComputer) -> Void)?
     private var discoveryError: ((String) -> Void)?
     private var control: NWConnection?
     private var audio: NWConnection?
+    private let audioInFlight = OSAllocatedUnfairLock(initialState: 0)
     private var pending = Data()
     private var engine: AVAudioEngine?
     private var interruption: NSObjectProtocol?
     private var audioGeneration = 0
-    private var frameData = Data()
+    private var audioCapture: IOSAudioCapture?
     func deviceName() -> String { "iPhone" }
     func randomBytes(count: Int32) -> KotlinByteArray {
         var data = Data(count: Int(count))
@@ -108,9 +110,19 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
         self.audio = connection; connection.start(queue: self.queue)
     } }
     func sendAudio(bytes: KotlinByteArray) {
+        // Reserve before dispatching, so even a stalled network queue stays bounded.
+        guard audioInFlight.withLock({ count in
+            guard count < 16 else { return false }; count += 1; return true
+        }) else { return }
         let data = IosBytesKt.dataFromBytes(bytes: bytes)
-        queue.async { self.audio?.send(content: data, completion: .contentProcessed { _ in }) }
+        queue.async { [self] in
+            guard let connection = self.audio else { self.releaseAudioSend(); return }
+            connection.send(content: data, completion: .contentProcessed { [weak self] _ in
+                self?.releaseAudioSend()
+            })
+        }
     }
+    private func releaseAudioSend() { audioInFlight.withLock { $0 -= 1 } }
     func closeAudio() { queue.async { self.audio?.cancel(); self.audio = nil } }
     func startAudio(onFrame: @escaping (KotlinByteArray) -> Void, onError: @escaping (String) -> Void) {
         capture.async { [self] in
@@ -124,25 +136,18 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
                     try session.setPreferredSampleRate(48000); try session.setPreferredIOBufferDuration(0.01); try session.setActive(true)
                     let engine = AVAudioEngine(), input = engine.inputNode
                     let source = input.outputFormat(forBus: 0)
-                    guard source.sampleRate > 0, source.channelCount > 0,
-                          let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000, channels: 1, interleaved: false),
-                          let converter = AVAudioConverter(from: source, to: target) else { throw CaptureError.format }
-                    self.frameData.removeAll(keepingCapacity: true)
-                    input.installTap(onBus: 0, bufferSize: 480, format: source) { buffer, _ in
-                        let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * 48000 / source.sampleRate) + 32)
-                        guard let converted = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
-                        var supplied = false; var conversionError: NSError?
-                        converter.convert(to: converted, error: &conversionError) { _, status in
-                            if supplied { status.pointee = .noDataNow; return nil }
-                            supplied = true; status.pointee = .haveData; return buffer
-                        }
-                        guard conversionError == nil, let samples = converted.int16ChannelData?.pointee else { return }
-                        self.frameData.append(UnsafeBufferPointer(start: UnsafeRawPointer(samples).assumingMemoryBound(to: UInt8.self), count: Int(converted.frameLength) * 2))
-                        while self.frameData.count >= 960 {
-                            let frame = Data(self.frameData.prefix(960)); self.frameData.removeFirst(960)
-                            _ = onFrame(IosBytesKt.bytesFromData(data: frame))
-                        }
+                    // Sink receives hardware-sized blocks; a tap's requested 480 frames
+                    // is only a hint and can actually batch ~100 ms of microphone audio.
+                    let capture = try IOSAudioCapture(format: source, queue: self.capture) { data in
+                        _ = onFrame(IosBytesKt.bytesFromData(data: data))
                     }
+                    let sink = AVAudioSinkNode { timestamp, frames, buffers in
+                        capture.receive(timestamp: timestamp.pointee.mSampleTime, frames: frames, buffers: buffers)
+                        return noErr
+                    }
+                    engine.attach(sink)
+                    engine.connect(input, to: sink, format: source)
+                    self.audioCapture = capture
                     self.engine = engine
                     self.interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: session, queue: nil) { [weak self] note in
                         guard (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue else { return }
@@ -156,9 +161,9 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
     private func stopEngine() {
         audioGeneration += 1
         if let interruption { NotificationCenter.default.removeObserver(interruption); self.interruption = nil }
-        if let engine { engine.stop(); engine.inputNode.removeTap(onBus: 0); self.engine = nil }
+        if let engine { engine.stop(); self.engine = nil }
+        audioCapture?.stop(); audioCapture = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
     func stopAudio() { capture.async { self.stopEngine() } }
-    private enum CaptureError: Error { case format }
 }

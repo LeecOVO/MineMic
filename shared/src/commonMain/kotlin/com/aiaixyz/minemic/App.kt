@@ -26,6 +26,7 @@ fun App(controller: MicController? = null, onConnect: ((String, String) -> Unit)
             Column(Modifier.safeDrawingPadding().imePadding().verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 28.dp).widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Text("MineMic", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Text("${AppVersion.name} · ${AppVersion.stage}", style = MaterialTheme.typography.labelMedium)
                 Text("把手机变成电脑麦克风", style = MaterialTheme.typography.titleMedium)
                 if (!state.ownsPc) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -7,6 +7,13 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
+val generateAppVersion by tasks.registering(Sync::class) {
+    val appVersion = rootProject.extra["mineMicVersion"] as String
+    inputs.property("appVersion", appVersion)
+    from("src/versionTemplate") { expand("appVersion" to appVersion) }
+    into(layout.buildDirectory.dir("generated/minemicVersion"))
+}
+
 kotlin {
     listOf(
         iosArm64(),
@@ -42,6 +49,7 @@ kotlin {
     }
 
     sourceSets {
+        commonMain { kotlin.srcDir(generateAppVersion) }
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)

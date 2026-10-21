@@ -3,5 +3,4 @@ TEAM_ID=
 PRODUCT_NAME=MineMic
 PRODUCT_BUNDLE_IDENTIFIER=com.aiaixyz.minemic.MineMic$(TEAM_ID)
 
-CURRENT_PROJECT_VERSION=1
-MARKETING_VERSION=1.0
+#include "../../version.xcconfig"
