@@ -47,3 +47,7 @@ MINEMIC_PC_TEST_SERVER=/absolute/path/MineMic-PC/build-desktop/minemic_network_t
 2026-10-21：Android Debug APK、Kotlin iOS Simulator framework、完整 iOS 模拟器应用构建通过；Kotlin JVM 6 项测试通过（包括真实 C++ 接收器互通）；PC 回归 5 项通过。系统 Bonjour 在本机发现 PC 服务成功。
 
 尚未完成 Windows 实机/单 EXE、真实 Android/iPhone 麦克风到虚拟声卡、后台锁屏长时稳定性及 CPU/内存/延迟测量。PC 仍依赖独立虚拟声卡，本仓库没有自有驱动。
+
+## 许可证
+
+本项目原创代码采用 [MIT License](LICENSE)，版权所有 © 2026 LeeC。第三方组件、依赖及工具保留其各自的版权声明与许可证。
