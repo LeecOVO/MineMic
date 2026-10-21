@@ -44,6 +44,18 @@ MINEMIC_PC_TEST_SERVER=/absolute/path/MineMic-PC/build-desktop/minemic_network_t
 
 没有提供此环境变量时，互通项明确跳过；其余协议单元测试照常运行。协议契约在相邻 PC 仓库的 `docs/PROTOCOL.md`，需保持 Kotlin、C++、Python 三者一致。
 
+## iOS 发布包
+
+GitHub Release 使用完全无签名的 `MineMic-0.0.1-ea.1-ios-unsigned.ipa`，不包含个人开发签名、`_CodeSignature` 或 `embedded.mobileprovision`。安装者需要自行签名后安装。
+
+已有设备 IPA 可通过以下命令去除签名并校验，输入文件保持不变；输出文件必须不存在：
+
+```sh
+python3 scripts/package-ios-unsigned.py /path/to/device.ipa /path/to/MineMic-0.0.1-ea.1-ios-unsigned.ipa
+```
+
+发布包保存到 iCloud 云盘的 `构建物/iOS-IPA/MineMic/0.0.1-ea.1/release/`。脚本同时生成 SHA-256 校验文件。
+
 ## 当前验证边界
 
 2026-10-21：Android Debug APK、Kotlin iOS Simulator framework、完整 iOS 模拟器应用构建通过；Kotlin JVM 7 项测试通过（包括真实 C++ 接收器互通）；PC 回归 5 项通过。系统 Bonjour 在本机发现 PC 服务成功。

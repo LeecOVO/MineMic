@@ -9,4 +9,4 @@
 
 - User confirmed the iPhone-to-Windows stutter fix accepted for 0.0.1-ea.1. This is not quantitative latency, background, or all-device acceptance.
 
-- Put packaged APK/IPA files in the existing iCloud Drive 构建物 archive, under Android-APK or iOS-IPA / MineMic / version / local (development signing). Do not create a 构件物 folder in the repository.
+- Put packaged files in the existing iCloud Drive 构建物 archive under Android-APK or iOS-IPA / MineMic / version. Release IPA files go in release/ and must be completely unsigned: no Mach-O code signature, _CodeSignature, or provisioning profile; name them *-ios-unsigned.ipa. Development APK files remain in local/. Use scripts/package-ios-unsigned.py to remove and verify IPA signatures. Do not create a 构件物 folder in the repository.
