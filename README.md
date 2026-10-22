@@ -1,79 +1,79 @@
 # MineMic
 
-**0.0.1-ea.1 · Early Access · 首个可用版本**。首个可用的 EA 版本，仍处于初始开发阶段。版本规则见 [版本约定](docs/VERSIONING.md)。
+将 Android 手机或 iPhone 变成电脑麦克风，通过局域网传输声音。移动端采用 Kotlin Multiplatform + Compose Multiplatform，配合独立的 [MineMic-PC](https://github.com/LeecOVO/MineMic-PC) 使用。
 
-将 Android/iPhone 当作电脑麦克风的手机端，采用 Kotlin Multiplatform + Compose Multiplatform。电脑端是相邻的独立 C++/Qt 项目 **MineMic-PC**，两个目录分别管理 Git，不互相嵌套。
+已发布版本：**0.0.1-ea.1 · Early Access**。当前开发版本：**0.1.0-dev.1**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
 
-## 连接方式
+## 使用
 
-1. 在 PC 的 MineMic 中选好音频输出设备并开启接收。
-2. 手机与 PC 连接同一局域网，选择“配对码连接”，输入 PC 显示的 **6 位数字码**（前导零有效）。
-3. 若局域网发现受路由器限制，选择“手动连接”，输入 PC 的 IPv4；默认端口为 48721，不另外输入配对码。
-4. PC 按首次连接原则锁定手机，其他手机被拒绝；断网仍保留占用，原手机可自动重连。
-5. 手机或 PC 主动断开后，PC 释放占用并更新配对码，旧码失效。
+1. 电脑启动 MineMic-PC，选择输出设备并开始接收。
+2. 手机与电脑连接同一局域网，输入 PC 显示的 **6 位配对码**；也可手动填写 PC 的 IPv4 地址，默认端口为 48721。
+3. 首台手机独占连接，其他手机无法抢占。网络中断后保留占用，原手机可自动重连。
+4. 手机或 PC 主动断开后释放占用，并更新配对码。
 
-当前凭据在手机应用进程内保存。系统结束应用进程后不会自动释放 PC，需要在 PC 手动断开。控制与音频尚未加密，请用于可信局域网。
+在会议、游戏或录音软件中作为系统麦克风使用时，PC 需要安装虚拟声卡：MineMic-PC 输出到其播放端，目标软件使用对应的录音端。选择实体扬声器可以试听声音。
 
-## 代码
+首次使用需允许麦克风和局域网访问。Android 最低版本为 7.0，iOS 工程部署目标为 18.2。连接凭据保存在手机应用进程中；进程结束后，可在 PC 手动释放占用。传输尚未加密，请在可信局域网使用。
 
-- `shared/.../connection`：共同的配对、独占会话、重连、主动断开、音频协议与状态。
-- `shared/.../App.kt`：配对码/手动 IP 入口、麦克风状态、静音与断开。
-- `androidApp`：系统 NSD、Java TCP/UDP、AudioRecord、麦克风前台服务及权限入口；ViewModel 保留配置变化期间的会话。
-- `iosApp`：Bonjour、Network.framework、AVAudioEngine/转换器的 Swift 平台适配；界面与会话逻辑仍在 Kotlin。
-- `desktopApp`：原模板保留的开发预览入口，不作为正式 PC 客户端，不提供手机麦克风能力。
+## 开发版功能
 
-Android 需麦克风权限；目标 Android 17/API 37 的设备还需局域网运行时权限。iOS 已声明麦克风、局域网、Bonjour 服务类型及后台音频用途。真实后台/锁屏和权限恢复仍需真机验收。
+- 可选 WebRTC AEC3 回声抑制与降噪，默认关闭。回声抑制需要支持外放参考的 Windows PC 端；单独降噪可连接旧版 PC。
+- 收音增强支持 0–18 dB，默认 0 dB；可从 +6 dB 开始试听。
+- 降噪提供通用与桌面游戏场景，桌面游戏场景使用本地 RNNoise，额外算法延迟约 20 ms。
+- iOS 可选锁屏／灵动岛状态及静音、断开控制。关闭实时活动不会停止录音或释放 PC 占用；后台录音仍受系统音频会话与权限限制。
 
-## 构建和测试
+声音处理和锁屏控制均可展开设置。开发版的声音效果、锁屏运行及延迟表现仍需在目标设备和网络环境中测试。
+
+## 构建与测试
+
+使用 JDK 21。Android 构建需要 Android SDK、NDK 28.2.13676358；iOS 构建需要 macOS 和 Xcode。原生音频依赖首次构建还需要 Python 3.9+、curl 和网络，由 Gradle/CMake 自动构建。固定来源与 SHA-256 摘要见 [build-apm.py](scripts/build-apm.py)，应用运行时无需下载依赖。
 
 ```sh
 ./gradlew :shared:jvmTest :androidApp:assembleDebug
 ```
 
-Android 调试包输出 `androidApp/build/outputs/apk/debug/androidApp-debug.apk`。iOS 用 Xcode 打开 `iosApp/iosApp.xcodeproj`，或在配置好的 Xcode 环境生成共享 framework：
+APK 输出：`androidApp/build/outputs/apk/debug/androidApp-debug.apk`。
+
+iOS 使用 Xcode 打开 `iosApp/iosApp.xcodeproj`，配置自己的签名后运行。也可单独生成模拟器共享框架：
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
+./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
 ```
 
-可运行实际 Kotlin → C++ 会话互通测试，先构建相邻 PC 项目的测试目标，再设置：
+在 macOS 运行原生音频与采集回归：
 
 ```sh
-MINEMIC_PC_TEST_SERVER=/absolute/path/MineMic-PC/build-desktop/minemic_network_tests ./gradlew :shared:jvmTest --rerun-tasks
+tests/native-audio/run.sh
+tests/ios-audio/run.sh
 ```
 
-没有提供此环境变量时，互通项明确跳过；其余协议单元测试照常运行。协议契约在相邻 PC 仓库的 `docs/PROTOCOL.md`，需保持 Kotlin、C++、Python 三者一致。
+构建 PC 仓库的网络测试目标后，可运行 Kotlin → C++ 互通测试：
+
+```sh
+MINEMIC_PC_TEST_SERVER=/path/to/MineMic-PC/build/desktop/minemic_network_tests ./gradlew :shared:jvmTest --rerun-tasks
+```
+
+未设置该环境变量时，互通项跳过。协议见 [PC 协议文档](https://github.com/LeecOVO/MineMic-PC/blob/v0.1.0-dev.1/docs/PROTOCOL.md)。自动测试不能代替真机音频、后台运行和网络测试。
 
 ## iOS 发布包
 
-GitHub Release 使用完全无签名的 `MineMic-0.0.1-ea.1-ios-unsigned.ipa`，不包含个人开发签名、`_CodeSignature` 或 `embedded.mobileprovision`。安装者需要自行签名后安装。
-
-已有设备 IPA 可通过以下命令去除签名并校验，输入文件保持不变；输出文件必须不存在：
+Release IPA 完全无签名，不包含 Mach-O 代码签名、`_CodeSignature` 或描述文件，安装者需自行签名。
 
 ```sh
-python3 scripts/package-ios-unsigned.py /path/to/device.ipa /path/to/MineMic-0.0.1-ea.1-ios-unsigned.ipa
+python3 scripts/package-ios-unsigned.py /path/to/device.ipa /path/to/MineMic-VERSION-ios-unsigned.ipa
 ```
 
-发布包保存到 iCloud 云盘的 `构建物/iOS-IPA/MineMic/0.0.1-ea.1/release/`。脚本同时生成 SHA-256 校验文件。
+脚本保留输入文件，要求输出文件不存在，并去除、校验签名及生成 SHA-256 校验文件。
 
-## 当前验证边界
+## 项目结构
 
-2026-10-21：Android Debug APK、Kotlin iOS Simulator framework、完整 iOS 模拟器应用构建通过；Kotlin JVM 7 项测试通过（包括真实 C++ 接收器互通）；PC 回归 5 项通过。系统 Bonjour 在本机发现 PC 服务成功。
-
-用户已在真实 iPhone → Windows 连接中反馈声音断续、延迟大。已修复 iOS 批量采集与发送队列过小导致的丢帧，并增加原生采集测试；用户已确认卡顿验收通过。具体改动、验证方法和限制见 [音频链路修复记录](docs/AUDIO_PIPELINE.md)。
-
-用户已确认本次 iPhone → Windows 卡顿修复验收通过；尚无量化端到端延迟、后台锁屏长时稳定性及 CPU/内存结论，其他设备和虚拟声卡组合仍需测试。PC 仍依赖独立虚拟声卡，本仓库没有自有驱动。
+- `shared`：共享界面、会话、协议及声音处理。
+- `androidApp`：Android 权限、采集、网络和麦克风前台服务。
+- `iosApp`：Swift 采集、网络、音频会话和实时活动。
+- `native`：原生声音处理及第三方许可证。
+- `desktopApp`：共享界面的桌面开发预览，可通过 `./gradlew :desktopApp:run` 启动。
+- `tests`、`scripts`：音频回归与构建工具。
 
 ## 许可证
 
-本项目原创代码采用 [MIT License](LICENSE)，版权所有 © 2026 LeeC。第三方组件、依赖及工具保留其各自的版权声明与许可证。
-
-## 0.1.0-dev.1 音频增强开发
-
-已接入手机 WebRTC AEC3/NS、独立可选开关、Windows 按需外放参考与有界回退，以及 iOS 音频会话生命周期恢复。开关默认关闭；单独 NS 可连接旧 PC。当前是开发快照，已发布基线仍为 0.0.1-ea.1。
-
-同一开发轮次新增可选的 0–18 dB 收音增强（0 dB 关闭）、通用／桌面游戏降噪场景，以及 iOS 锁屏／灵动岛状态和静音、断开控制。桌面游戏场景使用本地 RNNoise，额外算法延迟约 20 ms；锁屏卡片独立于后台录音，关闭卡片不释放 PC 占用。可从“声音处理”和 iOS 的“锁屏控制”展开设置，收音增强建议从 +6 dB 开始试听。
-
-新原生依赖由 Gradle/CMake 自动构建，首次需要 Python 3.9+、curl、NDK 28.2.13676358 / Xcode 和网络；固定来源与 SHA-256 摘要见 [构建脚本](scripts/build-apm.py)。不引入完整 WebRTC 传输 SDK，不在运行时下载。原生回归运行 `tests/native-audio/run.sh`，iOS 采集回归运行 `tests/ios-audio/run.sh`。
-
-JVM 19 项（含真实 C++ fixture）、Swift／原生音频回归及 Android、iOS 构建已通过；真实键鼠与人声、长期锁屏、端到端延迟、温升及长时漂移补偿仍待实机验收。第三方许可独立保留，不改变 MineMic 原创代码的 MIT 许可。
+原创代码采用 [MIT License](LICENSE)，版权所有 © 2026 LeeC。第三方组件保留各自的版权与许可声明，见 [native/licenses](native/licenses) 及应用内许可信息。
