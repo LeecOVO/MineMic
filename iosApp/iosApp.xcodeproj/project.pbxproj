@@ -6,8 +6,25 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		DC906200E85F51DB81A31BC0 /* MineMicLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 31A6FAEA41DF5BA1A864AFC2; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4B2D63E156B55F7799C12FEF /* Embed App Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (DC906200E85F51DB81A31BC0, ); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		4ED99AB0D5B05380B53BFD7B = {isa = PBXContainerItemProxy; containerPortal = 2F231A8ECE14136C5DCA5A17; proxyType = 1; remoteGlobalIDString = 9974F142FD0753D083249A5C; remoteInfo = MineMicLiveActivity; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		B1EF193E66285E1E8768C0FB = {isa = PBXTargetDependency; target = 9974F142FD0753D083249A5C; targetProxy = 4ED99AB0D5B05380B53BFD7B; };
+/* End PBXTargetDependency section */
+
 /* Begin PBXFileReference section */
 		4B522808A2381958042730B6 /* MineMic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MineMic.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		31A6FAEA41DF5BA1A864AFC2 /* MineMicLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MineMicLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -18,6 +35,7 @@
 			);
 			target = 9BEDFBAD12E7F0BE8D7E897C /* iosApp */;
 		};
+		F51EB95A37ED54D4872D833C = {isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Info.plist, ); target = 9974F142FD0753D083249A5C; };
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +52,8 @@
 			path = Configuration;
 			sourceTree = "<group>";
 		};
+		B4B35B2B1E5D5C7A9A4ACB07 /* MineMicLiveActivity */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (F51EB95A37ED54D4872D833C, ); path = MineMicLiveActivity; sourceTree = "<group>"; };
+		1C5FDFC05F6B5BB0A1B8221C /* LiveActivityShared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = LiveActivityShared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -44,6 +64,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8508A622AEAA5364B649CA19 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -52,6 +73,8 @@
 			children = (
 				F090210255E270AFD5F56052 /* Configuration */,
 				9285457AE3D01144B189DC17 /* iosApp */,
+				B4B35B2B1E5D5C7A9A4ACB07 /* MineMicLiveActivity */,
+				1C5FDFC05F6B5BB0A1B8221C /* LiveActivityShared */,
 				F74D90B8D49CF2F2DCC12766 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -60,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				4B522808A2381958042730B6 /* MineMic.app */,
+				31A6FAEA41DF5BA1A864AFC2 /* MineMicLiveActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -75,13 +99,16 @@
 				DAB057C74F4A23D593F3B70F /* Sources */,
 				E93E11B93F43EA8EF0FC6A8A /* Frameworks */,
 				CE42C2BCBB6FD023AED2CB57 /* Resources */,
+				4B2D63E156B55F7799C12FEF /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B1EF193E66285E1E8768C0FB /* MineMicLiveActivity */,
 			);
 			fileSystemSynchronizedGroups = (
 				9285457AE3D01144B189DC17 /* iosApp */,
+				1C5FDFC05F6B5BB0A1B8221C /* LiveActivityShared */,
 			);
 			name = iosApp;
 			packageProductDependencies = (
@@ -90,6 +117,7 @@
 			productReference = 4B522808A2381958042730B6 /* MineMic.app */;
 			productType = "com.apple.product-type.application";
 		};
+		9974F142FD0753D083249A5C /* MineMicLiveActivity */ = {isa = PBXNativeTarget; buildConfigurationList = B9DA65687103592281A46166; buildPhases = (D2374BAC1D445989B08E62DF, 8508A622AEAA5364B649CA19, 7670C9A3516A5FCE926CC4E4, ); buildRules = (); dependencies = (); fileSystemSynchronizedGroups = (B4B35B2B1E5D5C7A9A4ACB07, 1C5FDFC05F6B5BB0A1B8221C, ); name = MineMicLiveActivity; productName = MineMicLiveActivity; productReference = 31A6FAEA41DF5BA1A864AFC2; productType = "com.apple.product-type.app-extension"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -120,6 +148,7 @@
 			projectRoot = "";
 			targets = (
 				9BEDFBAD12E7F0BE8D7E897C /* iosApp */,
+				9974F142FD0753D083249A5C /* MineMicLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -132,6 +161,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7670C9A3516A5FCE926CC4E4 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -164,6 +194,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D2374BAC1D445989B08E62DF = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -346,6 +377,52 @@
 			};
 			name = Release;
 		};
+		03D05AE1BA1F59C686679881 /* Debug */ = {
+            isa = XCBuildConfiguration;
+            baseConfigurationReferenceAnchor = F090210255E270AFD5F56052;
+            baseConfigurationReferenceRelativePath = Config.xcconfig;
+            buildSettings = {
+                APPLICATION_EXTENSION_API_ONLY = YES;
+                CODE_SIGN_STYLE = Automatic;
+                DEVELOPMENT_TEAM = "${TEAM_ID}";
+                GENERATE_INFOPLIST_FILE = YES;
+                INFOPLIST_FILE = MineMicLiveActivity/Info.plist;
+                INFOPLIST_KEY_CFBundleDisplayName = MineMic;
+                IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+                LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
+                PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.MineMic$(TEAM_ID).LiveActivity";
+                PRODUCT_NAME = MineMicLiveActivity;
+                SKIP_INSTALL = YES;
+                SWIFT_EMIT_LOC_STRINGS = YES;
+                SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+                SWIFT_VERSION = 5.0;
+                TARGETED_DEVICE_FAMILY = "1,2";
+            };
+            name = Debug;
+        };
+		5A79C5977B3851B8B8C6A96C /* Release */ = {
+            isa = XCBuildConfiguration;
+            baseConfigurationReferenceAnchor = F090210255E270AFD5F56052;
+            baseConfigurationReferenceRelativePath = Config.xcconfig;
+            buildSettings = {
+                APPLICATION_EXTENSION_API_ONLY = YES;
+                CODE_SIGN_STYLE = Automatic;
+                DEVELOPMENT_TEAM = "${TEAM_ID}";
+                GENERATE_INFOPLIST_FILE = YES;
+                INFOPLIST_FILE = MineMicLiveActivity/Info.plist;
+                INFOPLIST_KEY_CFBundleDisplayName = MineMic;
+                IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+                LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
+                PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.MineMic$(TEAM_ID).LiveActivity";
+                PRODUCT_NAME = MineMicLiveActivity;
+                SKIP_INSTALL = YES;
+                SWIFT_EMIT_LOC_STRINGS = YES;
+                SWIFT_OPTIMIZATION_LEVEL = "-O";
+                SWIFT_VERSION = 5.0;
+                TARGETED_DEVICE_FAMILY = "1,2";
+            };
+            name = Release;
+        };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -367,6 +444,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		B9DA65687103592281A46166 = {isa = XCConfigurationList; buildConfigurations = (03D05AE1BA1F59C686679881, 5A79C5977B3851B8B8C6A96C, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = 2F231A8ECE14136C5DCA5A17 /* Project object */;

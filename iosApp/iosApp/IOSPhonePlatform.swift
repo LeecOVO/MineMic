@@ -8,7 +8,6 @@ import os
 
 final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate, NetServiceDelegate {
     private let queue = DispatchQueue(label: "MineMic.network", qos: .userInteractive)
-    private let capture = DispatchQueue(label: "MineMic.capture", qos: .userInteractive)
     private var browser: NetServiceBrowser?
     private var services: [NetService] = []
     private var found: ((LanComputer) -> Void)?
@@ -17,10 +16,8 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
     private var audio: NWConnection?
     private let audioInFlight = OSAllocatedUnfairLock(initialState: 0)
     private var pending = Data()
-    private var engine: AVAudioEngine?
-    private var interruption: NSObjectProtocol?
-    private var audioGeneration = 0
-    private var audioCapture: IOSAudioCapture?
+    private let microphone = IOSMicrophoneSession()
+    func monotonicMicros() -> Int64 { Int64(DispatchTime.now().uptimeNanoseconds / 1000) }
     func deviceName() -> String { "iPhone" }
     func randomBytes(count: Int32) -> KotlinByteArray {
         var data = Data(count: Int(count))
@@ -104,11 +101,19 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
         self.control?.send(content: (line + "\n").data(using: .utf8), completion: .contentProcessed { _ in })
     } }
     func closeControl() { queue.async { let old = self.control; self.control = nil; old?.cancel(); self.pending.removeAll() } }
-    func openAudio(host: String, port: Int32) { queue.async {
+    func openAudio(host: String, port: Int32, onReference: @escaping (KotlinByteArray) -> Void) { queue.async {
         self.audio?.cancel()
         let connection = NWConnection(host: .init(host), port: NWEndpoint.Port(rawValue: UInt16(port))!, using: .udp)
         self.audio = connection; connection.start(queue: self.queue)
+        self.receiveReference(connection, onReference)
     } }
+    private func receiveReference(_ connection: NWConnection, _ callback: @escaping (KotlinByteArray) -> Void) {
+        connection.receiveMessage { [weak self, weak connection] data, _, _, error in
+            guard let self, let connection, self.audio === connection else { return }
+            if let data, data.count <= 1200 { callback(IosBytesKt.bytesFromData(data: data)) }
+            if error == nil { self.receiveReference(connection, callback) }
+        }
+    }
     func sendAudio(bytes: KotlinByteArray) {
         // Reserve before dispatching, so even a stalled network queue stays bounded.
         guard audioInFlight.withLock({ count in
@@ -124,46 +129,12 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
     }
     private func releaseAudioSend() { audioInFlight.withLock { $0 -= 1 } }
     func closeAudio() { queue.async { self.audio?.cancel(); self.audio = nil } }
-    func startAudio(onFrame: @escaping (KotlinByteArray) -> Void, onError: @escaping (String) -> Void) {
-        capture.async { [self] in
-            self.stopEngine(); let epoch = self.audioGeneration
-            AVAudioApplication.requestRecordPermission { [self] allowed in self.capture.async { [self] in
-                guard epoch == self.audioGeneration else { return }
-                guard allowed else { _ = onError("请在系统设置中允许麦克风权限"); return }
-                do {
-                    let session = AVAudioSession.sharedInstance()
-                    try session.setCategory(.record, mode: .measurement, options: [])
-                    try session.setPreferredSampleRate(48000); try session.setPreferredIOBufferDuration(0.01); try session.setActive(true)
-                    let engine = AVAudioEngine(), input = engine.inputNode
-                    let source = input.outputFormat(forBus: 0)
-                    // Sink receives hardware-sized blocks; a tap's requested 480 frames
-                    // is only a hint and can actually batch ~100 ms of microphone audio.
-                    let capture = try IOSAudioCapture(format: source, queue: self.capture) { data in
-                        _ = onFrame(IosBytesKt.bytesFromData(data: data))
-                    }
-                    let sink = AVAudioSinkNode { timestamp, frames, buffers in
-                        capture.receive(timestamp: timestamp.pointee.mSampleTime, frames: frames, buffers: buffers)
-                        return noErr
-                    }
-                    engine.attach(sink)
-                    engine.connect(input, to: sink, format: source)
-                    self.audioCapture = capture
-                    self.engine = engine
-                    self.interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: session, queue: nil) { [weak self] note in
-                        guard (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue else { return }
-                        self?.capture.async { self?.stopEngine(); _ = onError("麦克风被来电或其他音频打断，请返回应用重新启用") }
-                    }
-                    engine.prepare(); try engine.start()
-                } catch { self.stopEngine(); _ = onError(error.localizedDescription) }
-            } }
-        }
+    func startAudio(onFrame: @escaping (CapturedAudio) -> Void, onError: @escaping (String) -> Void,
+                    onState: @escaping (KotlinBoolean, String) -> Void) {
+        microphone.start(onFrame: { data, micros in onFrame(CapturedAudio(pcm: IosBytesKt.bytesFromData(data: data), capturedAtMicros: micros)) },
+                         onError: { _ = onError($0) },
+                         onState: { active, message in _ = onState(KotlinBoolean(bool: active), message) })
     }
-    private func stopEngine() {
-        audioGeneration += 1
-        if let interruption { NotificationCenter.default.removeObserver(interruption); self.interruption = nil }
-        if let engine { engine.stop(); self.engine = nil }
-        audioCapture?.stop(); audioCapture = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-    func stopAudio() { capture.async { self.stopEngine() } }
+    func stopAudio() { microphone.stop() }
+    func applicationBecameActive() { microphone.becameActive() }
 }

@@ -30,6 +30,7 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
     private val recording = AtomicBoolean(false)
     @Volatile private var recorder: AudioRecord? = null
     private var captureThread: Thread? = null
+    override fun monotonicMicros() = System.nanoTime() / 1000
     override fun deviceName() = Build.MODEL.take(64)
     override fun randomBytes(count: Int) = ByteArray(count).also { SecureRandom().nextBytes(it) }
     override fun hmac(body: ByteArray, key: ByteArray): ByteArray = Mac.getInstance("HmacSHA256").run {
@@ -109,13 +110,23 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
         network.execute { if (epoch == generation.get()) runCatching { socket?.getOutputStream()?.write((line + "\n").toByteArray()) } }
     }
     @Synchronized override fun closeControl() { generation.incrementAndGet(); val old = tcp; tcp = null; runCatching { old?.close() } }
-    override fun openAudio(host: String, port: Int) {
+    override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit) {
         closeAudio()
-        udp = DatagramSocket().apply { connect(InetAddress.getByName(host), port) }
+        val socket = DatagramSocket().apply { connect(InetAddress.getByName(host), port); receiveBufferSize = 32768 }
+        udp = socket
+        Thread({
+            val storage = ByteArray(1201)
+            while (!socket.isClosed) {
+                try {
+                    val packet = DatagramPacket(storage, storage.size); socket.receive(packet)
+                    if (packet.length <= 1200) onReference(storage.copyOf(packet.length))
+                } catch (_: Exception) { break }
+            }
+        }, "MineMic-reference").apply { isDaemon = true; start() }
     }
     override fun sendAudio(bytes: ByteArray) { runCatching { udp?.send(DatagramPacket(bytes, bytes.size)) } }
     override fun closeAudio() { udp?.close(); udp = null }
-    override fun startAudio(onFrame: (ByteArray) -> Unit, onError: (String) -> Unit) {
+    override fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit) {
         stopAudio()
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             onError("请先允许麦克风权限"); return
@@ -134,13 +145,21 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
                 check(audio.state == AudioRecord.STATE_INITIALIZED) { "录音设备初始化失败" }
                 audio.startRecording()
                 check(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "麦克风被其他应用占用" }
-                val frame = ByteArray(960); var offset = 0
+                onState(true, "手机麦克风正在传输")
+                val frame = ByteArray(960); var offset = 0; var totalFrames = 0L
+                val timestamp = AudioTimestamp()
                 while (recording.get()) {
                     val count = audio.read(frame, offset, frame.size - offset, AudioRecord.READ_BLOCKING)
                     if (!recording.get()) break
                     check(count > 0) { "录音读取失败：$count" }
                     offset += count
-                    if (offset == frame.size) { onFrame(frame.copyOf()); offset = 0 }
+                    if (offset == frame.size) {
+                        totalFrames += 480
+                        val captured = if (audio.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS)
+                            timestamp.nanoTime / 1000 + (totalFrames - 480 - timestamp.framePosition) * 1000000 / 48000
+                        else 0L // NS still works; do not align AEC using an invented hardware timestamp.
+                        onFrame(CapturedAudio(frame.copyOf(), captured)); offset = 0
+                    }
                 }
             } catch (e: Exception) { if (recording.getAndSet(false)) onError(e.message ?: "录音失败") }
             finally {

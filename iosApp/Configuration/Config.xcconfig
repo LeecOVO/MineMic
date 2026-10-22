@@ -1,4 +1,5 @@
 TEAM_ID=
+OTHER_LDFLAGS = $(inherited) -lc++
 
 PRODUCT_NAME=MineMic
 PRODUCT_BUNDLE_IDENTIFIER=com.aiaixyz.minemic.MineMic$(TEAM_ID)

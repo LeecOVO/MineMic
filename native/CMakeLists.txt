@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.22)
+project(MineMicAPM LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+get_filename_component(MINEMIC_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${MINEMIC_ROOT}/scripts/build-apm.py" "${CMAKE_CURRENT_LIST_DIR}/src/minemic_apm.cpp" "${CMAKE_CURRENT_LIST_DIR}/include/minemic_apm.h")
+find_program(PYTHON_EXECUTABLE NAMES python3 python REQUIRED)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E env "ANDROID_NDK_HOME=${ANDROID_NDK}" "${PYTHON_EXECUTABLE}" "${MINEMIC_ROOT}/scripts/build-apm.py" --target "android-${ANDROID_ABI}"
+    RESULT_VARIABLE status COMMAND_ECHO STDOUT)
+if(NOT status EQUAL 0)
+    message(FATAL_ERROR "WebRTC audio processing build failed: ${status}")
+endif()
+add_library(minemic_apm STATIC IMPORTED)
+set_target_properties(minemic_apm PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/build/android-${ANDROID_ABI}/libminemic_apm.a")
+add_library(minemic_apm_jni SHARED src/apm_jni.cpp)
+target_include_directories(minemic_apm_jni PRIVATE include)
+target_link_libraries(minemic_apm_jni PRIVATE minemic_apm log)
+target_link_options(minemic_apm_jni PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,--gc-sections")

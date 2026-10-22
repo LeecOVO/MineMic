@@ -1,5 +1,6 @@
 package com.aiaixyz.minemic.connection
 
+import com.aiaixyz.minemic.audio.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
@@ -12,6 +13,9 @@ data class MicState(
     val phase: ConnectionPhase = ConnectionPhase.IDLE,
     val message: String = "输入 PC 端的 6 位配对码，或手动输入 PC 地址",
     val pcName: String = "", val ownsPc: Boolean = false,
+    val noiseSuppression: Boolean = false, val echoCancellation: Boolean = false,
+    val deskNoiseSuppression: Boolean = false, val inputGainDb: Float = 0f,
+    val enhancementMessage: String = "增强已关闭",
     val recording: Boolean = false, val muted: Boolean = false, val level: Float = 0f,
 )
 
@@ -21,16 +25,33 @@ class MicController(private val platform: PhonePlatform) {
     val state = mutableState.asStateFlow()
     private var connectionJob: Job? = null
     private var audioJob: Job? = null
+    private var captureWatchdog: Job? = null
     private var releaseJob: Job? = null
     private var session: Session? = null
     private var muted = false
-    private data class Session(val pc: LanComputer, val clientId: String, var token: String, var id: Long, var key: ByteArray)
+    private var inputGainDb = 0f
+    private var captureEpoch = 0L
+    private var captureSequence = 0L
+    private var options = EnhancementOptions()
+    private var enhancer: AudioEnhancer? = null
+    private var clock = ClockSync()
+    private var referenceRequested = false
+    private var referencePaused = false
+    private var referenceStartedAt = 0L
+    private var lastEffectiveEcho = 0L
+    private var referenceRetryAt = 0L
+    private data class Session(val pc: LanComputer, val clientId: String, var token: String, var id: Long, var key: ByteArray, val supportsReference: Boolean)
     private sealed interface Event {
         data class Line(val fields: Map<String, String>) : Event
         data class Closed(val reason: String) : Event
     }
     private class PairError(val reason: String) : Exception(reason)
     private fun update(block: (MicState) -> MicState) { mutableState.value = block(mutableState.value) }
+
+    fun observeState(observer: (MicState) -> Unit): MicStateSubscription {
+        val job = scope.launch { state.collect { observer(it) } }
+        return object : MicStateSubscription { override fun cancel() { job.cancel() } }
+    }
 
     fun connect(code: String, host: String) {
         scope.launch {
@@ -102,7 +123,7 @@ class MicController(private val platform: PhonePlatform) {
         require(id in 1..0xffffffffL)
         val token = m["token"] ?: error("Missing token"); Wire.unhex(token)
         val port = m["port"]?.toIntOrNull() ?: error("Missing port"); require(port in 1024..65535)
-        return Session(pc.copy(port = port, name = m["pcName"] ?: pc.name), clientId, token, id, Wire.unhex(m["key"] ?: ""))
+        return Session(pc.copy(port = port, name = m["pcName"] ?: pc.name), clientId, token, id, Wire.unhex(m["key"] ?: ""), m["caps"]?.split(",")?.contains(REFERENCE_CAPABILITY) == true)
     }
     private suspend fun next(channel: Channel<Event>): Map<String, String> = when (val e = channel.receive()) {
         is Event.Line -> e.fields
@@ -115,10 +136,34 @@ class MicController(private val platform: PhonePlatform) {
             update { it.copy(phase = ConnectionPhase.CONNECTED, message = "已连接，PC 已为本手机保留", pcName = s.pc.name, ownsPc = true) }
             var ping: Job? = null
             try {
-                platform.openAudio(s.pc.host, s.pc.port); beginAudio()
-                ping = scope.launch { while (isActive) { platform.sendControl(ControlJson.encode(mapOf("type" to "ping"))); delay(1000) } }
+                clock = ClockSync(); referenceRequested = false; referencePaused = true; captureSequence = 0L
+                referenceRetryAt = 0L; lastEffectiveEcho = 0L
+                beginAudio()
+                val processing = enhancer
+                platform.openAudio(s.pc.host, s.pc.port) { processing?.offerReference(it) }
+                requestReference()
+                ping = scope.launch {
+                    var samples = 0
+                    while (isActive) {
+                        requestReference()
+                        platform.sendControl(ControlJson.encode(mapOf("type" to "ping")))
+                        if (s.supportsReference && options.echo) {
+                            val t1 = platform.monotonicMicros(); clock.sent(t1)
+                            platform.sendControl(ControlJson.encode(mapOf("type" to "clock", "t1" to t1.toString())))
+                        }
+                        delay(if (samples++ < 5 && options.echo) 200 else 1000)
+                    }
+                }
                 while (true) {
                     val m = withTimeout(4000) { next(channel) }
+                    if (m["type"] == "clock") {
+                        val t1 = m["t1"]?.toLongOrNull(); val t2 = m["t2"]?.toLongOrNull(); val t3 = m["t3"]?.toLongOrNull()
+                        if (t1 != null && t2 != null && t3 != null) clock.receive(t1, t2, t3, platform.monotonicMicros())
+                    }
+                    if (m["type"] == "reference" && m["state"] == "unavailable") {
+                        pauseReference()
+                        update { it.copy(enhancementMessage = "PC 外放参考暂不可用，麦克风继续传输") }
+                    }
                     if (m["type"] == "disconnected") { clearLocal("PC 已断开连接，配对码已更新"); return }
                 }
             } catch (e: CancellationException) {
@@ -143,16 +188,46 @@ class MicController(private val platform: PhonePlatform) {
         }
     }
     private fun beginAudio() {
-        stopCapture()
+        stopCapture(keepEnhancer = true)
         val s = session ?: return
+        val epoch = captureEpoch
+        if (enhancer == null) enhancer = AudioEnhancer(s.id, s.key.copyOf(), platform::monotonicMicros, platform::hmac)
         // Native capture may deliver several 10 ms frames in one callback. A 40 ms
         // channel discarded valid iOS batches before this coroutine could run.
         // Keep at most 160 ms; on sustained overload prefer recent speech.
-        val frames = Channel<Pair<Long, ByteArray>>(16, BufferOverflow.DROP_OLDEST)
-        var captureSequence = 0L
+        val frames = Channel<Pair<Long, CapturedAudio>>(16, BufferOverflow.DROP_OLDEST)
+        var capturePaused = false
+        var frameTimedOut = false
+        var lastFrameAt = platform.monotonicMicros()
+        val gain = CaptureGain()
+        captureWatchdog = scope.launch {
+            while (isActive && epoch == captureEpoch) {
+                delay(1000)
+                if (!capturePaused && !frameTimedOut && platform.monotonicMicros() - lastFrameAt > 2000000) {
+                    frameTimedOut = true
+                    referencePaused = true; requestReference(); enhancer?.releaseProcessing()
+                    update { it.copy(recording = false, level = 0f, message = "录音数据已暂停，请返回应用检查；连接保留") }
+                }
+            }
+        }
         audioJob = scope.launch {
-            for ((sequence, pcm) in frames) {
-                if (pcm.size != 960) continue
+            for ((sequence, frame) in frames) {
+                if (frame.pcm.size != 960 || capturePaused) continue
+                lastFrameAt = platform.monotonicMicros()
+                if (frameTimedOut) {
+                    frameTimedOut = false; referencePaused = false; requestReference()
+                    update { it.copy(recording = true, message = "手机麦克风正在传输") }
+                }
+                val chosen = options
+                val result = if (chosen.noise || chosen.echo) enhancer?.enhance(frame,
+                    chosen.copy(echo = chosen.echo && s.supportsReference && referenceRequested),
+                    clock.current(platform.monotonicMicros())?.takeIf { platform.monotonicMicros() - frame.capturedAtMicros in -20000L..200000L }) else null
+                val cleaned = if (options == chosen) result?.pcm ?: frame.pcm else frame.pcm
+                val pcm = gain.process(cleaned, inputGainDb)
+                if (capturePaused) continue
+                val now = platform.monotonicMicros()
+                if (result?.echo == true) lastEffectiveEcho = now
+                if (referenceRequested && now - maxOf(referenceStartedAt, lastEffectiveEcho) > 1500000) pauseReference()
                 val body = Wire.audioBody(s.id, sequence, if (muted) ByteArray(960) else pcm)
                 platform.sendAudio(body + platform.hmac(body, s.key))
                 if (sequence % 10 == 1L) {
@@ -161,15 +236,72 @@ class MicController(private val platform: PhonePlatform) {
                         val n = (pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)
                         peak = maxOf(peak, abs(n))
                     }
-                    update { it.copy(recording = true, muted = muted, level = if (muted) 0f else peak / 32768f, message = "手机麦克风正在传输") }
+                    val dspMessage = when {
+                        chosen.echo && !s.supportsReference -> (if (chosen.noise) result?.message?.plus("；") ?: "" else "") + "回声抑制需要新版 Windows PC"
+                        chosen.echo && now < referenceRetryAt -> (if (chosen.noise) result?.message?.plus("；") ?: "" else "") + "回声参考暂停，稍后自动重试"
+                        else -> result?.message ?: "增强已关闭"
+                    }
+                    val gainMessage = if (inputGainDb > 0f) "收音增强 +${inputGainDb.toInt()} dB" else ""
+                    val enhancementMessage = if (gainMessage.isEmpty()) dspMessage else
+                        (if (dspMessage == "增强已关闭") "" else "$dspMessage；") + gainMessage
+                    update { it.copy(recording = true, muted = muted, level = if (muted) 0f else peak / 32768f,
+                        message = "手机麦克风正在传输", enhancementMessage = enhancementMessage) }
                 }
             }
         }
         platform.startAudio({ frames.trySend(captureSequence++ to it) }, { error -> scope.launch {
-            frames.close(); update { it.copy(recording = false, level = 0f, message = "已连接，但无法录音：$error") }
+            if (epoch == captureEpoch) {
+                capturePaused = true; captureWatchdog?.cancel()
+                frames.cancel(); audioJob?.cancel()
+                referencePaused = true; requestReference(); enhancer?.releaseProcessing()
+                update { it.copy(recording = false, level = 0f, message = "已连接，但无法录音：$error") }
+            }
+        } }, { active, message -> scope.launch {
+            if (epoch == captureEpoch && session != null) {
+                capturePaused = !active
+                if (active) { frameTimedOut = false; lastFrameAt = platform.monotonicMicros() }
+                referencePaused = !active; requestReference()
+                if (!active) enhancer?.releaseProcessing()
+                update { it.copy(recording = active, level = if (active) it.level else 0f, message = message) }
+            }
         } })
     }
-    private fun stopCapture() { platform.stopAudio(); audioJob?.cancel(); audioJob = null }
+    private fun stopCapture(keepEnhancer: Boolean = false) {
+        captureEpoch++; platform.stopAudio()
+        captureWatchdog?.cancel(); captureWatchdog = null
+        audioJob?.cancel(); audioJob = null
+        if (!keepEnhancer) { enhancer?.close(); enhancer = null }
+    }
+    private fun requestReference() {
+        val s = session ?: return
+        val wanted = options.echo && s.supportsReference && !referencePaused && platform.monotonicMicros() >= referenceRetryAt
+        if (referenceRequested == wanted) return
+        referenceRequested = wanted
+        if (wanted) referenceStartedAt = platform.monotonicMicros()
+        platform.sendControl(ControlJson.encode(mapOf("type" to "reference", "enabled" to if (wanted) "1" else "0")))
+    }
+    private fun pauseReference() {
+        referenceRetryAt = platform.monotonicMicros() + 5000000
+        requestReference(); enhancer?.releaseProcessing()
+    }
+    fun setNoiseSuppression(value: Boolean) { scope.launch {
+        options = options.copy(noise = value)
+        update { it.copy(noiseSuppression = value, enhancementMessage = if (value || options.echo) "等待音频增强" else "增强已关闭") }
+        if (!options.noise && !options.echo) enhancer?.releaseProcessing()
+    } }
+    fun setDeskNoiseSuppression(value: Boolean) { scope.launch {
+        options = options.copy(desk = value)
+        update { it.copy(deskNoiseSuppression = value, enhancementMessage = if (options.noise) "等待应用降噪场景" else it.enhancementMessage) }
+    } }
+    fun setInputGainDb(value: Float) { scope.launch {
+        inputGainDb = if (value.isFinite()) value.coerceIn(0f, 18f) else 0f
+        update { it.copy(inputGainDb = inputGainDb) }
+    } }
+    fun setEchoCancellation(value: Boolean) { scope.launch {
+        options = options.copy(echo = value); referenceRetryAt = 0L; requestReference()
+        update { it.copy(echoCancellation = value, enhancementMessage = if (value || options.noise) "等待音频增强" else "增强已关闭") }
+        if (!options.noise && !options.echo) enhancer?.releaseProcessing()
+    } }
     fun setMuted(value: Boolean) { scope.launch { muted = value; update { it.copy(muted = value) } } }
     fun retryMicrophone() { scope.launch { if (session != null && state.value.phase == ConnectionPhase.CONNECTED) beginAudio() } }
     fun disconnect() {
@@ -203,10 +335,11 @@ class MicController(private val platform: PhonePlatform) {
     }
     private fun clearLocal(message: String) {
         stopCapture(); platform.closeAudio(); platform.closeControl(); session?.key?.fill(0); session = null
-        mutableState.value = MicState(message = message, muted = muted)
+        mutableState.value = MicState(message = message, muted = muted, noiseSuppression = options.noise,
+            echoCancellation = options.echo, deskNoiseSuppression = options.desk, inputGainDb = inputGainDb)
     }
     fun close() {
-        scope.cancel(); platform.stopDiscovery(); platform.stopAudio(); platform.closeAudio(); platform.closeControl()
+        enhancer?.close(); enhancer = null; scope.cancel(); platform.stopDiscovery(); platform.stopAudio(); platform.closeAudio(); platform.closeControl()
         // Process/lifecycle destruction is NOT an explicit user disconnect at the PC.
     }
     private fun friendly(reason: String) = when (reason) {

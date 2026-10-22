@@ -1,0 +1,2 @@
+headers = minemic_apm.h
+package = com.aiaixyz.minemic.audio.nativeapm

@@ -67,3 +67,13 @@ python3 scripts/package-ios-unsigned.py /path/to/device.ipa /path/to/MineMic-0.0
 ## 许可证
 
 本项目原创代码采用 [MIT License](LICENSE)，版权所有 © 2026 LeeC。第三方组件、依赖及工具保留其各自的版权声明与许可证。
+
+## 0.1.0-dev.1 音频增强开发
+
+已接入手机 WebRTC AEC3/NS、独立可选开关、Windows 按需外放参考与有界回退，以及 iOS 音频会话生命周期恢复。开关默认关闭；单独 NS 可连接旧 PC。当前是开发快照，已发布基线仍为 0.0.1-ea.1。
+
+同一开发轮次新增可选的 0–18 dB 收音增强（0 dB 关闭）、通用／桌面游戏降噪场景，以及 iOS 锁屏／灵动岛状态和静音、断开控制。桌面游戏场景使用本地 RNNoise，额外算法延迟约 20 ms；锁屏卡片独立于后台录音，关闭卡片不释放 PC 占用。可从“声音处理”和 iOS 的“锁屏控制”展开设置，收音增强建议从 +6 dB 开始试听。
+
+新原生依赖由 Gradle/CMake 自动构建，首次需要 Python 3.9+、curl、NDK 28.2.13676358 / Xcode 和网络；固定来源与 SHA-256 摘要见 [构建脚本](scripts/build-apm.py)。不引入完整 WebRTC 传输 SDK，不在运行时下载。原生回归运行 `tests/native-audio/run.sh`，iOS 采集回归运行 `tests/ios-audio/run.sh`。
+
+JVM 19 项（含真实 C++ fixture）、Swift／原生音频回归及 Android、iOS 构建已通过；真实键鼠与人声、长期锁屏、端到端延迟、温升及长时漂移补偿仍待实机验收。第三方许可独立保留，不改变 MineMic 原创代码的 MIT 许可。

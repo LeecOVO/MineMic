@@ -10,6 +10,7 @@ final class IOSAudioCapture {
     private final class Block {
         let pcm: AVAudioPCMBuffer
         var sampleTime: Double = 0
+        var hostMicros: Int64 = 0
         init(format: AVAudioFormat) throws {
             guard let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: IOSAudioCapture.capacity) else { throw CaptureError.format }
             self.pcm = pcm
@@ -24,13 +25,14 @@ final class IOSAudioCapture {
     private let signal: DispatchSourceUserDataAdd
     private let converter: AVAudioConverter
     private let converted: AVAudioPCMBuffer
-    private let onFrame: (Data) -> Void
+    private let onFrame: (Data, Int64) -> Void
+    private var pendingMicros: Int64?
     private let maxQueuedFrames: AVAudioFrameCount
     private var pending = Data()
     private var expectedSampleTime: Double?
     private var active = true // Accessed only on the capture worker.
 
-    init(format: AVAudioFormat, queue: DispatchQueue, onFrame: @escaping (Data) -> Void) throws {
+    init(format: AVAudioFormat, queue: DispatchQueue, onFrame: @escaping (Data, Int64) -> Void) throws {
         guard format.sampleRate > 0, format.channelCount > 0,
               let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000, channels: 1, interleaved: false),
               let converter = AVAudioConverter(from: format, to: target),
@@ -47,7 +49,7 @@ final class IOSAudioCapture {
     }
 
     /// Called on the real-time thread. Never waits for the worker.
-    func receive(timestamp: Double, frames: AVAudioFrameCount, buffers: UnsafePointer<AudioBufferList>) {
+    func receive(timestamp: Double, hostMicros: Int64? = nil, frames: AVAudioFrameCount, buffers: UnsafePointer<AudioBufferList>) {
         guard frames > 0, frames <= Self.capacity else { return }
         // The closure runs synchronously; hardware pointers never escape this call.
         let copied = ring.withLockIfAvailableUnchecked { state -> Bool in
@@ -62,6 +64,7 @@ final class IOSAudioCapture {
                       source[i].mDataByteSize <= Self.capacity * block.pcm.format.streamDescription.pointee.mBytesPerFrame else { return false }
             }
             block.pcm.frameLength = frames; block.sampleTime = timestamp
+            block.hostMicros = hostMicros ?? Int64(timestamp * 1000000 / block.pcm.format.sampleRate)
             for i in 0..<source.count {
                 memcpy(destination[i].mData!, source[i].mData!, Int(source[i].mDataByteSize))
             }
@@ -79,9 +82,13 @@ final class IOSAudioCapture {
             // The read slot stays occupied until conversion completes, so capture
             // cannot overwrite samples while the converter reads them.
             if let expectedSampleTime, abs(block.sampleTime - expectedSampleTime) > 1 {
-                converter.reset(); pending.removeAll(keepingCapacity: true)
+                converter.reset(); pending.removeAll(keepingCapacity: true); pendingMicros = nil
             }
             expectedSampleTime = block.sampleTime + Double(block.pcm.frameLength)
+            // Re-anchor to hardware time, not the worker's arrival time or an
+            // indefinitely extrapolated nominal 48 kHz clock. Account for the
+            // output samples already waiting to complete a packet.
+            pendingMicros = block.hostMicros > 0 ? block.hostMicros - Int64(pending.count / 2) * 1000000 / 48000 : 0
             convert(block.pcm)
             ring.withLockUnchecked { state in
                 state.frames -= block.pcm.frameLength; state.count -= 1; state.read = (state.read + 1) % blocks.count
@@ -103,7 +110,7 @@ final class IOSAudioCapture {
         var offset = 0
         while pending.count - offset >= 960 {
             let start = pending.startIndex + offset
-            onFrame(Data(pending[start..<(start + 960)])); offset += 960
+            onFrame(Data(pending[start..<(start + 960)]), pendingMicros ?? 0); pendingMicros = (pendingMicros ?? 0) + 10000; offset += 960
         }
         if offset > 0 { pending.removeFirst(offset) }
     }

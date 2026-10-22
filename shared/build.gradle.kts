@@ -19,9 +19,19 @@ kotlin {
         iosArm64(),
         iosSimulatorArm64()
     ).forEach { iosTarget ->
+        val buildApm = tasks.register<Exec>("buildApm${iosTarget.name.replaceFirstChar { it.uppercase() }}") {
+            commandLine("python3", rootProject.file("scripts/build-apm.py"), "--target", iosTarget.name)
+        }
+        val apmInterop = iosTarget.compilations.getByName("main").cinterops.create("minemic_apm") {
+            definitionFile.set(project.file("src/nativeInterop/cinterop/minemic_apm.def"))
+            includeDirs(rootProject.file("native/include"))
+            extraOpts("-staticLibrary", "libminemic_apm.a", "-libraryPath", rootProject.file("native/build/${iosTarget.name}").absolutePath)
+        }
+        tasks.named(apmInterop.interopProcessingTaskName).configure { dependsOn(buildApm) }
         iosTarget.binaries.framework {
             baseName = "Shared"
             isStatic = true
+            linkerOpts("-lc++")
         }
     }
 

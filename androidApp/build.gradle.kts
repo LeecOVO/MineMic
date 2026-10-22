@@ -23,6 +23,7 @@ dependencies {
 android {
     namespace = "com.aiaixyz.minemic"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.aiaixyz.minemic"
@@ -30,7 +31,9 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = rootProject.extra["mineMicBuild"] as Int
         versionName = rootProject.extra["mineMicVersion"] as String
+        externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_static" } }
     }
+    externalNativeBuild { cmake { path = rootProject.file("native/CMakeLists.txt"); version = "3.22.1" } }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
