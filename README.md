@@ -2,7 +2,7 @@
 
 将 Android 手机或 iPhone 变成电脑麦克风，通过局域网传输声音。移动端采用 Kotlin Multiplatform + Compose Multiplatform，配合独立的 [MineMic-PC](https://github.com/LeecOVO/MineMic-PC) 使用。
 
-已发布版本：**0.0.1-ea.1 · Early Access**。当前开发版本：**0.1.0-dev.1**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
+当前版本：**0.1.0-ea.1 · Early Access**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
 
 ## 使用
 
@@ -15,14 +15,14 @@
 
 首次使用需允许麦克风和局域网访问。Android 最低版本为 7.0，iOS 工程部署目标为 18.2。连接凭据保存在手机应用进程中；进程结束后，可在 PC 手动释放占用。传输尚未加密，请在可信局域网使用。
 
-## 开发版功能
+## 声音处理与锁屏控制
 
 - 可选 WebRTC AEC3 回声抑制与降噪，默认关闭。回声抑制需要支持外放参考的 Windows PC 端；单独降噪可连接旧版 PC。
 - 收音增强支持 0–18 dB，默认 0 dB；可从 +6 dB 开始试听。
 - 降噪提供通用与桌面游戏场景，桌面游戏场景使用本地 RNNoise，额外算法延迟约 20 ms。
 - iOS 可选锁屏／灵动岛状态及静音、断开控制。关闭实时活动不会停止录音或释放 PC 占用；后台录音仍受系统音频会话与权限限制。
 
-声音处理和锁屏控制均可展开设置。开发版的声音效果、锁屏运行及延迟表现仍需在目标设备和网络环境中测试。
+声音处理和锁屏控制均可展开设置。声音处理的效果、锁屏运行及延迟表现仍需在目标设备和网络环境中测试。
 
 ## 构建与测试
 
@@ -53,7 +53,7 @@ tests/ios-audio/run.sh
 MINEMIC_PC_TEST_SERVER=/path/to/MineMic-PC/build/desktop/minemic_network_tests ./gradlew :shared:jvmTest --rerun-tasks
 ```
 
-未设置该环境变量时，互通项跳过。协议见 [PC 协议文档](https://github.com/LeecOVO/MineMic-PC/blob/v0.1.0-dev.1/docs/PROTOCOL.md)。自动测试不能代替真机音频、后台运行和网络测试。
+未设置该环境变量时，互通项跳过。协议见 [PC 协议文档](https://github.com/LeecOVO/MineMic-PC/blob/v0.1.0-ea.1/docs/PROTOCOL.md)。自动测试不能代替真机音频、后台运行和网络测试。
 
 ## iOS 发布包
 
