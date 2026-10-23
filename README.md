@@ -2,7 +2,7 @@
 
 将 Android 手机或 iPhone 变成电脑麦克风，通过局域网传输声音。移动端采用 Kotlin Multiplatform + Compose Multiplatform，配合独立的 [MineMic-PC](https://github.com/LeecOVO/MineMic-PC) 使用。
 
-当前版本：**0.1.0-ea.1 · Early Access**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
+当前版本：**0.1.0-ea.2 · Early Access**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
 
 ## 使用
 
@@ -23,6 +23,8 @@
 - iOS 可选锁屏／灵动岛状态及静音、断开控制。关闭实时活动不会停止录音或释放 PC 占用；后台录音仍受系统音频会话与权限限制。
 
 声音处理和锁屏控制均可展开设置。声音处理的效果、锁屏运行及延迟表现仍需在目标设备和网络环境中测试。
+
+右上角“设置 → 外观”提供跟随系统、白色和黑色三种选择，默认跟随系统夜间模式；选择立即生效并自动保存。
 
 ## 构建与测试
 
