@@ -15,8 +15,6 @@ import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
     private val nsd = context.getSystemService(NsdManager::class.java)
@@ -30,12 +28,11 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
     private val recording = AtomicBoolean(false)
     @Volatile private var recorder: AudioRecord? = null
     private var captureThread: Thread? = null
+    private val authenticator = HmacSha256()
     override fun monotonicMicros() = System.nanoTime() / 1000
     override fun deviceName() = Build.MODEL.take(64)
     override fun randomBytes(count: Int) = ByteArray(count).also { SecureRandom().nextBytes(it) }
-    override fun hmac(body: ByteArray, key: ByteArray): ByteArray = Mac.getInstance("HmacSHA256").run {
-        init(SecretKeySpec(key, "HmacSHA256")); doFinal(body)
-    }
+    override fun hmac(body: ByteArray, key: ByteArray) = authenticator.authenticate(body, key)
     @Suppress("DEPRECATION")
     override fun discover(onFound: (LanComputer) -> Unit, onError: (String) -> Unit) {
         main.post {
@@ -125,7 +122,7 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
         }, "MineMic-reference").apply { isDaemon = true; start() }
     }
     override fun sendAudio(bytes: ByteArray) { runCatching { udp?.send(DatagramPacket(bytes, bytes.size)) } }
-    override fun closeAudio() { udp?.close(); udp = null }
+    override fun closeAudio() { udp?.close(); udp = null; authenticator.clear() }
     override fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit) {
         stopAudio()
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {

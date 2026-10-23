@@ -56,7 +56,7 @@ final class LiveActivityCoordinator {
             }
             return true
         }
-        subscription = controller.observeState { [weak self] state in
+        subscription = controller.observeSessionState { [weak self] state in
             Task { @MainActor [weak self] in self?.receive(state) }
         }
         authorizationMonitor = Task { [weak self] in

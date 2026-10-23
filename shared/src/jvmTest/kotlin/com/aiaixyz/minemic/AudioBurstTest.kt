@@ -38,7 +38,7 @@ class AudioBurstTest {
         override fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit) {
             captured = onFrame
             status = onState; failure = onError
-            onState(true, "capturing")
+            onState(true, "手机麦克风正在传输")
             // Synchronous native callback before startAudio returns: the sender
             // cannot drain the channel yet. This used to discard most of a batch.
             repeat(12) { index -> onFrame(CapturedAudio(ByteArray(960) { index.toByte() }, monotonicMicros())) }
@@ -119,5 +119,34 @@ class AudioBurstTest {
             await { platform.sent.size > count && controller.state.value.recording }
             assertTrue(controller.state.value.ownsPc)
         } finally { controller.close() }
+    }
+
+    @Test fun sessionObserversIgnoreMeterChangesButReceiveMuteAndCaptureTransitions() = runBlocking {
+        val platform = BurstPlatform(); val controller = MicController(platform)
+        val all = CopyOnWriteArrayList<MicState>()
+        val sessions = CopyOnWriteArrayList<MicState>()
+        val fullSubscription = controller.observeState { all += it }
+        val sessionSubscription = controller.observeSessionState { sessions += it }
+        try {
+            controller.connect("", "127.0.0.1")
+            await { platform.sent.size == 12 && sessions.lastOrNull()?.recording == true }
+            val before = sessions.size
+            val fullBefore = all.size
+            repeat(6) { batch ->
+                val count = platform.sent.size
+                repeat(10) {
+                    platform.captured?.invoke(CapturedAudio(ByteArray(960) { (batch * 11).toByte() }, platform.monotonicMicros()))
+                }
+                await { platform.sent.size == count + 10 }
+            }
+            await { all.size > fullBefore }
+            assertEquals(before, sessions.size)
+            assertTrue(sessions.all { it.level == 0f })
+            controller.setMuted(true)
+            await { sessions.last().muted }
+            platform.status?.invoke(false, "interrupted")
+            await { !sessions.last().recording }
+            assertTrue(sessions.last().ownsPc)
+        } finally { fullSubscription.cancel(); sessionSubscription.cancel(); controller.close() }
     }
 }

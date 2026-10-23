@@ -39,11 +39,13 @@
   <!-- 外层背景 -->
   <rect width="512" height="512" rx="115" fill="#121215" filter="url(#dropShadow)" />
 
-  <!-- 内层渐变 -->
-  <g filter="url(#innerShadow)">
-    <rect x="72" y="72" width="368" height="368" rx="64" fill="url(#innerGrad)" mask="url(#cutout)" />
-  </g>
+  <g transform="translate(256 256) scale(0.94) translate(-256 -256)">
+    <!-- 内层渐变 -->
+    <g filter="url(#innerShadow)">
+      <rect x="72" y="72" width="368" height="368" rx="64" fill="url(#innerGrad)" mask="url(#cutout)" />
+    </g>
 
-  <!-- 高光描边 -->
-  <rect x="72" y="72" width="368" height="368" rx="64" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2" />
+    <!-- 高光描边 -->
+    <rect x="72" y="72" width="368" height="368" rx="64" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2" />
+  </g>
 </svg>

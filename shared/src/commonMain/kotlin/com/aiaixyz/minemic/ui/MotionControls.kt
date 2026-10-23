@@ -45,12 +45,13 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Shared, reversible press feedback with a visible keyboard focus outline. */
 @Composable
-internal fun Modifier.pressFeedback(source: MutableInteractionSource): Modifier {
+internal fun Modifier.pressFeedback(source: MutableInteractionSource, cornerRadius: Dp = 12.dp): Modifier {
     val pressed by source.collectIsPressedAsState()
     val focused by source.collectIsFocusedAsState()
     val focusColor = MaterialTheme.colorScheme.primary
@@ -58,7 +59,7 @@ internal fun Modifier.pressFeedback(source: MutableInteractionSource): Modifier 
         tween(if (pressed) 80 else 160, easing = FastOutSlowInEasing))
     return graphicsLayer { scaleX = scale; scaleY = scale }.drawWithContent {
         drawContent()
-        if (focused) drawRoundRect(focusColor, cornerRadius = CornerRadius(12.dp.toPx()), style = Stroke(2.dp.toPx()))
+        if (focused) drawRoundRect(focusColor, cornerRadius = CornerRadius(cornerRadius.toPx()), style = Stroke(2.dp.toPx()))
     }
 }
 

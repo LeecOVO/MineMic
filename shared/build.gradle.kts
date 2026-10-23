@@ -61,6 +61,8 @@ kotlin {
     sourceSets {
         commonMain { kotlin.srcDir(generateAppVersion) }
         androidMain.dependencies {
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.core.ktx)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
         }

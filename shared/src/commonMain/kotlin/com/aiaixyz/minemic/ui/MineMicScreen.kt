@@ -1,6 +1,9 @@
 package com.aiaixyz.minemic.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -78,7 +81,12 @@ fun MineMicScreen(
     onDeskNoiseSuppressionChange: (Boolean) -> Unit = {},
     lockScreenState: LockScreenState? = null,
     onLockScreenControlsChange: (Boolean) -> Unit = {},
+    audioLevel: (() -> Float)? = null,
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    onThemeModeChange: (ThemeMode) -> Unit = {},
 ) {
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    SettingsBackHandler(settingsOpen) { settingsOpen = false }
     var about by remember { mutableStateOf(false) }
     var help by remember { mutableStateOf(false) }
     var inputFocused by remember { mutableStateOf(false) }
@@ -93,7 +101,8 @@ fun MineMicScreen(
     Surface(Modifier.fillMaxSize().pointerInput(focusManager, keyboard) {
         detectTapGestures(onTap = { dismissInput() })
     }, color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.safeDrawingPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.safeDrawingPadding().imePadding()
+            .then(if (settingsOpen) Modifier.clearAndSetSemantics {} else Modifier), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 560.dp).fillMaxSize(),
             ) {
@@ -104,12 +113,15 @@ fun MineMicScreen(
                         Spacer(Modifier.width(10.dp))
                         Text("MineMic", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
                             letterSpacing = (-0.6).sp, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { dismissInput(); settingsOpen = true }, modifier = Modifier.semantics { contentDescription = "设置" }) {
+                            ToolIcon(Glyph.Settings, MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         IconButton(onClick = { dismissInput(); about = true }, modifier = Modifier.semantics { contentDescription = "关于 MineMic" }) {
                             ToolIcon(Glyph.Info, MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     if (state.ownsPc) {
-                        SessionPanel(state, controlsEnabled, onMutedChange, onRetryMicrophone, onDisconnect)
+                        SessionPanel(state, controlsEnabled, onMutedChange, onRetryMicrophone, onDisconnect, audioLevel)
                     } else {
                         PairingPanel(state, connectEnabled, onConnect, onDisconnect,
                             onInputFocusChange = { inputFocused = it }, dismissInput = dismissInput)
@@ -174,6 +186,12 @@ fun MineMicScreen(
             },
             confirmButton = { TextButton(onClick = { help = false }) { Text("知道了") } },
         )
+        AnimatedVisibility(settingsOpen,
+            enter = slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { it / 6 } + fadeIn(tween(160)),
+            exit = slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { it / 6 } + fadeOut(tween(140)),
+            modifier = Modifier.fillMaxSize()) {
+            SettingsScreen(themeMode, onThemeModeChange) { settingsOpen = false }
+        }
     }
 }
 
@@ -299,6 +317,7 @@ private fun PairingPanel(
 private fun SessionPanel(
     state: MicState, enabled: Boolean, onMutedChange: (Boolean) -> Unit,
     onRetryMicrophone: () -> Unit, onDisconnect: () -> Unit,
+    audioLevel: (() -> Float)?,
 ) {
     val disconnecting = state.phase == ConnectionPhase.DISCONNECTING
     val reconnecting = state.phase == ConnectionPhase.RECONNECTING
@@ -346,7 +365,7 @@ private fun SessionPanel(
                 Text(if (state.muted) "点击取消静音" else "点击静音", Modifier.padding(top = 14.dp),
                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(28.dp))
-                AudioMeter(if (!state.muted) state.level else 0f, !state.muted)
+                AudioMeter(level = { if (state.muted) 0f else audioLevel?.invoke() ?: state.level }, active = !state.muted)
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("输入电平", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(if (state.muted) "静音" else "实时",
@@ -388,8 +407,8 @@ private fun SessionPanel(
 }
 
 @Composable
-private fun AudioMeter(level: Float, active: Boolean) {
-    val value = level.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+private fun AudioMeter(level: () -> Float, active: Boolean) {
+    val value = level().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
     val target = if (active) sqrt(value) else 0f
     val display = remember { Animatable(0f) }
     LaunchedEffect(target) {
@@ -632,7 +651,7 @@ private fun WaveMark(modifier: Modifier, color: Color) {
     }
 }
 
-private enum class Glyph { Mic, MicOff, Info, Arrow, Network, Lock, Noise, Echo }
+private enum class Glyph { Mic, MicOff, Info, Arrow, Network, Lock, Noise, Echo, Settings }
 
 @Composable
 private fun ToolIcon(glyph: Glyph, color: Color, modifier: Modifier = Modifier.size(24.dp)) = ToolIcon(glyph, modifier, color)
@@ -645,6 +664,13 @@ private fun ToolIcon(glyph: Glyph, modifier: Modifier, color: Color) {
         fun line(x1: Float, y1: Float, x2: Float, y2: Float) =
             drawLine(color, Offset(x1 * u, y1 * u), Offset(x2 * u, y2 * u), stroke.width, StrokeCap.Round)
         when (glyph) {
+            Glyph.Settings -> {
+                line(3f, 6f, 21f, 6f); line(3f, 12f, 21f, 12f); line(3f, 18f, 21f, 18f)
+                val background = color.copy(alpha = 1f)
+                drawCircle(background, 2.5f * u, Offset(8*u, 6*u))
+                drawCircle(background, 2.5f * u, Offset(16*u, 12*u))
+                drawCircle(background, 2.5f * u, Offset(10*u, 18*u))
+            }
             Glyph.Mic, Glyph.MicOff -> {
                 drawRoundRect(color, Offset(9 * u, 2 * u), Size(6 * u, 13 * u), CornerRadius(3 * u), style = stroke)
                 drawArc(color, 0f, 180f, false, Offset(5.5f * u, 6 * u), Size(13 * u, 13 * u), style = stroke)

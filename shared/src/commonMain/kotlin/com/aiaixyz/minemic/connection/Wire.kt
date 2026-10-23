@@ -27,6 +27,26 @@ object Wire {
     }
 }
 
+/** Single-sender scratch storage. Each returned packet owns its bytes. */
+internal class AudioPacketEncoder(session: Long, private val authenticate: (ByteArray) -> ByteArray) {
+    private val body = Wire.audioBody(session, 0, ByteArray(960))
+
+    fun encode(sequence: Long, pcm: ByteArray, muted: Boolean): ByteArray {
+        require(pcm.size == 960)
+        for (i in 0 until 4) {
+            body[12 + i] = (sequence ushr ((3 - i) * 8)).toByte()
+            body[16 + i] = ((sequence * 480) ushr ((3 - i) * 8)).toByte()
+        }
+        if (muted) body.fill(0, 32, 992) else pcm.copyInto(body, 32)
+        val mac = authenticate(body)
+        check(mac.size == 32)
+        return ByteArray(1024).also {
+            body.copyInto(it)
+            mac.copyInto(it, 992)
+        }
+    }
+}
+
 /** Deliberately small JSON string map. No unbounded input or ambiguous duplicate fields. */
 object ControlJson {
     fun encode(fields: Map<String, String>): String {

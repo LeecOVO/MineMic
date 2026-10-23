@@ -26,4 +26,25 @@ class WireTest {
         assertContentEquals(pcm, b.copyOfRange(32, 992))
         assertFails { Wire.audioBody(1, 0, ByteArray(959)) }
     }
+
+    @Test fun reusableEncoderPreservesWireBytesAndDoesNotOverwriteQueuedPackets() {
+        val signatures = mutableListOf<ByteArray>()
+        val encoder = AudioPacketEncoder(0x12345678) { body ->
+            signatures += body.copyOf()
+            ByteArray(32) { (body[12].toInt() xor it).toByte() }
+        }
+        val pcm = ByteArray(960) { (it * 7).toByte() }
+        val packets = mutableListOf<ByteArray>()
+        val expected = mutableListOf<ByteArray>()
+        for ((index, sequence) in listOf(0L, 1L, 0xffffffffL, 0x100000000L, 0x100000001L).withIndex()) {
+            val muted = index % 2 == 1
+            val body = Wire.audioBody(0x12345678, sequence, if (muted) ByteArray(960) else pcm)
+            expected += body + ByteArray(32) { (body[12].toInt() xor it).toByte() }
+            packets += encoder.encode(sequence, pcm, muted)
+            assertContentEquals(body, signatures.last())
+        }
+        for (i in packets.indices) assertContentEquals(expected[i], packets[i])
+        assertContentEquals(ByteArray(960) { (it * 7).toByte() }, pcm)
+        assertFails { encoder.encode(0, ByteArray(959), false) }
+    }
 }

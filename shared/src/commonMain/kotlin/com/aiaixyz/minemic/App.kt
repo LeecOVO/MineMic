@@ -1,6 +1,7 @@
 package com.aiaixyz.minemic
 
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -15,6 +16,9 @@ import com.aiaixyz.minemic.connection.MicState
 import com.aiaixyz.minemic.connection.LockScreenControls
 import com.aiaixyz.minemic.ui.MineMicScreen
 import com.aiaixyz.minemic.ui.MineMicTheme
+import com.aiaixyz.minemic.ui.AppearanceSettings
+import com.aiaixyz.minemic.ui.PlatformAppearance
+import com.aiaixyz.minemic.ui.rememberAppearanceSettings
 import kotlinx.coroutines.launch
 import minemic.shared.generated.resources.Res
 import org.jetbrains.compose.resources.ExperimentalResourceApi
@@ -30,15 +34,30 @@ fun App(
     controller: MicController? = null,
     onConnect: ((String, String) -> Unit)? = null,
     lockScreenControls: LockScreenControls?,
+    appearanceSettings: AppearanceSettings? = null,
 ) {
-    val state = controller?.state?.collectAsState()?.value ?: if (onConnect != null) MicState() else
-        MicState(message = "手机端请运行 Android/iOS 应用；PC 端使用独立 MineMic-PC 客户端")
+    val appearance = appearanceSettings ?: rememberAppearanceSettings()
+    val dark = appearance.mode.isDark(isSystemInDarkTheme())
+    PlatformAppearance(appearance.mode, dark)
+    val observedState = controller?.state?.collectAsState()
+    // Meter changes invalidate only the meter, not the form, controls or dialogs.
+    val preview = onConnect != null
+    val state by remember(observedState, preview) {
+        derivedStateOf(structuralEqualityPolicy()) {
+            observedState?.value?.copy(level = 0f) ?: if (preview) MicState() else
+                MicState(message = "手机端请运行 Android/iOS 应用；PC 端使用独立 MineMic-PC 客户端")
+        }
+    }
+    val audioLevel = remember(observedState) { { observedState?.value?.level ?: 0f } }
     val lockScreenState = lockScreenControls?.state?.collectAsState()?.value
     var licenses by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    MineMicTheme {
+    MineMicTheme(darkTheme = dark) {
         MineMicScreen(
             state = state,
+            audioLevel = audioLevel,
+            themeMode = appearance.mode,
+            onThemeModeChange = appearance::select,
             controlsEnabled = controller != null,
             connectEnabled = controller != null || onConnect != null,
             onConnect = { code, host -> (onConnect ?: { c, ip -> controller?.connect(c, ip) })(code, host) },

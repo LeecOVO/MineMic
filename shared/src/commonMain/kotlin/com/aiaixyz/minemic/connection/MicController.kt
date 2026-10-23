@@ -6,6 +6,8 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlin.math.abs
 
 enum class ConnectionPhase { IDLE, SEARCHING, CONNECTING, CONNECTED, RECONNECTING, DISCONNECTING, ERROR }
@@ -50,6 +52,12 @@ class MicController(private val platform: PhonePlatform) {
 
     fun observeState(observer: (MicState) -> Unit): MicStateSubscription {
         val job = scope.launch { state.collect { observer(it) } }
+        return object : MicStateSubscription { override fun cancel() { job.cancel() } }
+    }
+
+    /** Lock-screen observers do not need microphone meter updates. */
+    fun observeSessionState(observer: (MicState) -> Unit): MicStateSubscription {
+        val job = scope.launch { state.map { it.copy(level = 0f) }.distinctUntilChanged().collect { observer(it) } }
         return object : MicStateSubscription { override fun cancel() { job.cancel() } }
     }
 
@@ -200,6 +208,7 @@ class MicController(private val platform: PhonePlatform) {
         var frameTimedOut = false
         var lastFrameAt = platform.monotonicMicros()
         val gain = CaptureGain()
+        val packets = AudioPacketEncoder(s.id) { platform.hmac(it, s.key) }
         captureWatchdog = scope.launch {
             while (isActive && epoch == captureEpoch) {
                 delay(1000)
@@ -228,8 +237,7 @@ class MicController(private val platform: PhonePlatform) {
                 val now = platform.monotonicMicros()
                 if (result?.echo == true) lastEffectiveEcho = now
                 if (referenceRequested && now - maxOf(referenceStartedAt, lastEffectiveEcho) > 1500000) pauseReference()
-                val body = Wire.audioBody(s.id, sequence, if (muted) ByteArray(960) else pcm)
-                platform.sendAudio(body + platform.hmac(body, s.key))
+                platform.sendAudio(packets.encode(sequence, pcm, muted))
                 if (sequence % 10 == 1L) {
                     var peak = 0
                     for (i in 0 until 480) {
