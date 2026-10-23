@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -35,8 +36,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
@@ -51,10 +54,12 @@ import kotlin.math.roundToInt
 
 /** Shared, reversible press feedback with a visible keyboard focus outline. */
 @Composable
-internal fun Modifier.pressFeedback(source: MutableInteractionSource, cornerRadius: Dp = 12.dp): Modifier {
+internal fun Modifier.pressFeedback(
+    source: MutableInteractionSource, cornerRadius: Dp = 12.dp, focusTint: Color? = null,
+): Modifier {
     val pressed by source.collectIsPressedAsState()
     val focused by source.collectIsFocusedAsState()
-    val focusColor = MaterialTheme.colorScheme.primary
+    val focusColor = focusTint ?: MaterialTheme.colorScheme.primary
     val scale by animateFloatAsState(if (pressed) .98f else 1f,
         tween(if (pressed) 80 else 160, easing = FastOutSlowInEasing))
     return graphicsLayer { scaleX = scale; scaleY = scale }.drawWithContent {
@@ -72,6 +77,8 @@ internal fun Reveal(visible: Boolean, content: @Composable () -> Unit) {
 }
 
 /** Position is shared with the pager, so the pill follows a finger instead of playing a separate animation. */
+internal enum class SlidingChoiceStyle { Default, Pairing }
+
 @Composable
 internal fun SlidingChoice(
     labels: List<String>, position: Float, enabled: Boolean,
@@ -79,6 +86,8 @@ internal fun SlidingChoice(
     onDragPosition: ((Float) -> Unit)? = null,
     selectedIndex: Int = position.roundToInt(),
     onDraggingChange: (Boolean) -> Unit = {},
+    style: SlidingChoiceStyle = SlidingChoiceStyle.Default,
+    nativeMaterialVisible: Boolean = true,
 ) {
     require(labels.size == 2)
     val latestPosition by rememberUpdatedState(position)
@@ -95,8 +104,23 @@ internal fun SlidingChoice(
         if (!dragging && latestDrag == null) localPosition.animateTo(position, tween(240, easing = FastOutSlowInEasing))
     }
     val colors = MaterialTheme.colorScheme
+    val pairing = style == SlidingChoiceStyle.Pairing
+    val systemPairing = pairing && usesSystemPairingAppearance
+    val pillSource = remember { MutableInteractionSource() }
+    val pillPressed by pillSource.collectIsPressedAsState()
+    val dark = colors.background.luminance() < .3f
+    val trackColor = when {
+        systemPairing -> Color.Transparent
+        pairing && !dark -> Color(0xFFEAF0EF)
+        else -> colors.surfaceContainer
+    }
+    val trackBorder = if (dark) colors.primary.copy(alpha = .28f) else Color(0xFFB8CEC9)
+    val pillBorder = if (dark) colors.primary.copy(alpha = .75f) else Color(0xFF398D7D)
     BoxWithConstraints(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-        .background(colors.surfaceContainer).padding(4.dp)) {
+        .background(trackColor)
+        .then(if (pairing && !systemPairing) Modifier.border(1.dp, trackBorder.copy(alpha = if (enabled) trackBorder.alpha else .35f),
+            RoundedCornerShape(14.dp)) else Modifier)
+        .padding(4.dp)) {
         val cellWidth = maxWidth / 2
         val cellPx = with(LocalDensity.current) { cellWidth.toPx() }
         val shown = if (dragging) dragPosition else if (onDragPosition != null) position else localPosition.value
@@ -125,14 +149,28 @@ internal fun SlidingChoice(
                 latestDraggingChange(false)
             },
         )
-        Box(Modifier.matchParentSize()) {
-            Box(Modifier.offset(x = cellWidth * shown.coerceIn(0f, 1f)).width(cellWidth).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(colors.surface))
+        val nativeGlass = if (pairing && nativeMaterialVisible) PlatformPairingSelection(
+            labels = labels, position = shown.coerceIn(0f, 1f), enabled = enabled,
+            engaged = dragging || pillPressed, rtl = rtl, modifier = Modifier.matchParentSize(),
+        ) else false
+        if (!nativeGlass) Box(Modifier.matchParentSize()) {
+            val pill = Modifier.offset(x = cellWidth * shown.coerceIn(0f, 1f))
+                .width(cellWidth).fillMaxHeight().clip(RoundedCornerShape(10.dp))
+            if (systemPairing) {
+                Box(pill.background(colors.surfaceContainerHigh)
+                    .border(1.dp, colors.outlineVariant, RoundedCornerShape(10.dp)))
+            } else if (pairing) {
+                Box(pill.background(colors.primaryContainer)
+                    .border(1.dp, pillBorder.copy(alpha = if (enabled) pillBorder.alpha else .35f), RoundedCornerShape(10.dp)))
+            } else Box(pill.background(colors.surface))
         }
         Row(Modifier.fillMaxWidth().then(drag).selectableGroup()) {
             labels.forEachIndexed { index, label ->
-                val source = remember { MutableInteractionSource() }
+                val individualSource = remember { MutableInteractionSource() }
+                val source = if (pairing) pillSource else individualSource
                 val emphasis = (1f - abs(shown - index)).coerceIn(0f, 1f)
-                Box(Modifier.weight(1f).pressFeedback(source).clip(RoundedCornerShape(10.dp))
+                Box(Modifier.weight(1f).pressFeedback(source,
+                    focusTint = if (systemPairing) colors.outline else null).clip(RoundedCornerShape(10.dp))
                     .selectable(selected = selectedIndex == index, enabled = enabled,
                         role = Role.Tab, interactionSource = source, indication = null,
                         onClick = { latestInteraction(); latestSelect(index) })
@@ -140,7 +178,13 @@ internal fun SlidingChoice(
                     contentAlignment = Alignment.Center) {
                     Text(label, style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = lerp(colors.onSurfaceVariant, colors.primary, emphasis).copy(alpha = if (enabled) 1f else .5f))
+                        color = if (nativeGlass) Color.Transparent else lerp(colors.onSurfaceVariant,
+                            when {
+                                systemPairing -> colors.onSurface
+                                pairing -> colors.onPrimaryContainer
+                                else -> colors.primary
+                            }, emphasis)
+                            .copy(alpha = if (enabled) 1f else .5f))
                 }
             }
         }

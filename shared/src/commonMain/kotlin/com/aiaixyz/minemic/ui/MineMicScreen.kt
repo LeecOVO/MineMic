@@ -84,6 +84,7 @@ fun MineMicScreen(
     audioLevel: (() -> Float)? = null,
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     onThemeModeChange: (ThemeMode) -> Unit = {},
+    nativeMaterialVisible: Boolean = true,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     SettingsBackHandler(settingsOpen) { settingsOpen = false }
@@ -124,6 +125,7 @@ fun MineMicScreen(
                         SessionPanel(state, controlsEnabled, onMutedChange, onRetryMicrophone, onDisconnect, audioLevel)
                     } else {
                         PairingPanel(state, connectEnabled, onConnect, onDisconnect,
+                            nativeMaterialVisible = nativeMaterialVisible && !settingsOpen && !about && !help,
                             onInputFocusChange = { inputFocused = it }, dismissInput = dismissInput)
                     }
                     Spacer(Modifier.height(20.dp))
@@ -198,6 +200,7 @@ fun MineMicScreen(
 @Composable
 private fun PairingPanel(
     state: MicState, enabled: Boolean, onConnect: (String, String) -> Unit, onCancel: () -> Unit,
+    nativeMaterialVisible: Boolean,
     onInputFocusChange: (Boolean) -> Unit, dismissInput: () -> Unit,
 ) {
     val pager = rememberPagerState(pageCount = { 2 })
@@ -225,6 +228,8 @@ private fun PairingPanel(
         Column(Modifier.fillMaxWidth().padding(20.dp)) {
             SlidingChoice(listOf("配对码", "IP 地址"), pager.currentPage + pager.currentPageOffsetFraction,
                 enabled = !pending,
+                style = SlidingChoiceStyle.Pairing,
+                nativeMaterialVisible = nativeMaterialVisible,
                 onInteraction = dismissInput,
                 onSelect = { index -> scope.launch { pager.animateScrollToPage(index, animationSpec = tween(260, easing = FastOutSlowInEasing)) } },
                 onDragPosition = { position ->

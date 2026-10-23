@@ -55,6 +55,7 @@ fun App(
     MineMicTheme(darkTheme = dark) {
         MineMicScreen(
             state = state,
+            nativeMaterialVisible = licenses == null,
             audioLevel = audioLevel,
             themeMode = appearance.mode,
             onThemeModeChange = appearance::select,
