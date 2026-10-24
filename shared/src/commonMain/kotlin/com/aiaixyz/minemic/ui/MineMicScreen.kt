@@ -1,9 +1,6 @@
 package com.aiaixyz.minemic.ui
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -85,10 +82,23 @@ fun MineMicScreen(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     nativeMaterialVisible: Boolean = true,
+    licenseText: String? = null,
+    licenseError: Boolean = false,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     SettingsBackHandler(settingsOpen) { settingsOpen = false }
     var about by remember { mutableStateOf(false) }
+    var privacyDocument by remember { mutableStateOf<PrivacyDocument?>(null) }
+    var privacyOpen by remember { mutableStateOf(false) }
+    var licensesOpen by remember { mutableStateOf(false) }
+    val closePrivacy = { privacyOpen = false }
+    val settingsMotion = rememberPageMotion(settingsOpen)
+    val aboutMotion = rememberPageMotion(about)
+    val privacyMotion = rememberPageMotion(privacyOpen)
+    val licensesMotion = rememberPageMotion(licensesOpen)
+    val pageCoversHome = settingsMotion.coversContent || aboutMotion.coversContent || privacyMotion.coversContent || licensesMotion.coversContent
+    SettingsBackHandler(about && !privacyOpen && !licensesOpen) { about = false }
+    SettingsBackHandler(privacyOpen, closePrivacy)
     var help by remember { mutableStateOf(false) }
     var inputFocused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -103,7 +113,7 @@ fun MineMicScreen(
         detectTapGestures(onTap = { dismissInput() })
     }, color = MaterialTheme.colorScheme.background) {
         Box(Modifier.safeDrawingPadding().imePadding()
-            .then(if (settingsOpen) Modifier.clearAndSetSemantics {} else Modifier), contentAlignment = Alignment.TopCenter) {
+            .then(if (pageCoversHome) Modifier.clearAndSetSemantics {} else Modifier), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 560.dp).fillMaxSize(),
             ) {
@@ -125,7 +135,7 @@ fun MineMicScreen(
                         SessionPanel(state, controlsEnabled, onMutedChange, onRetryMicrophone, onDisconnect, audioLevel)
                     } else {
                         PairingPanel(state, connectEnabled, onConnect, onDisconnect,
-                            nativeMaterialVisible = nativeMaterialVisible && !settingsOpen && !about && !help,
+                            nativeMaterialVisible = nativeMaterialVisible && !pageCoversHome && !help,
                             onInputFocusChange = { inputFocused = it }, dismissInput = dismissInput)
                     }
                     Spacer(Modifier.height(20.dp))
@@ -157,42 +167,42 @@ fun MineMicScreen(
                     }
                 }
             }
+            if (pageCoversHome) Box(Modifier.matchParentSize().blockPageInput())
         }
-        if (about) AlertDialog(
-            onDismissRequest = { about = false },
-            icon = { WaveMark(Modifier.size(32.dp), MaterialTheme.colorScheme.primary) },
-            title = { Text("MineMic") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("把手机变成电脑麦克风。")
-                    Text("${AppVersion.name}\n${AppVersion.stage}", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { uriHandler.openUri("https://github.com/LeecOVO/MineMic") },
-                        contentPadding = PaddingValues(0.dp)) { Text("项目主页") }
-                    TextButton(onClick = { about = false; onShowLicenses() }, contentPadding = PaddingValues(0.dp)) {
-                        Text("WebRTC 与第三方许可")
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { about = false }) { Text("完成") } },
-        )
+        PageMotion(aboutMotion, covered = privacyMotion.coversContent || licensesMotion.coversContent) {
+            AboutScreen(
+                active = about && !privacyMotion.coversContent && !licensesMotion.coversContent,
+                onBack = { about = false },
+                onProject = { uriHandler.openUri("https://github.com/LeecOVO/MineMic") },
+                onPrivacyDocument = { document -> privacyDocument = document; privacyOpen = true },
+                onLicenses = { licensesOpen = true; onShowLicenses() },
+                mark = { WaveMark(Modifier.size(32.dp), MaterialTheme.colorScheme.primary) },
+            )
+        }
         if (help) AlertDialog(
             onDismissRequest = { help = false }, title = { Text("连接帮助") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     HelpItem("连接前", "手机和电脑需在同一局域网。打开 MineMic PC 并开启接收，再输入电脑上的配对码。找不到电脑时，可以切换到 IP 地址。")
                     HelpItem("连接后", "一台电脑同时由一台手机独占。网络中断时会保留占用，并尝试连接原电脑。")
-                    HelpItem("结束使用", "点击「断开连接」释放占用，电脑会更新配对码。若网络中断，请重试断开，或在电脑端手动断开。")
-                    HelpItem("回声抑制", "需要支持参考音频的新版 Windows PC，并在电脑端选择实际使用的扬声器。参考暂不可用时，麦克风仍会继续传输。")
+                    HelpItem("结束使用", "点击「断开连接」释放占用。配对码仅在电脑停止接收或手动更新时改变。若网络中断，请重试断开，或在电脑端手动断开。")
+                    HelpItem("回声抑制", "新版 Windows PC 默认跟随系统外放设备；若游戏单独指定了输出设备，可在 PC 的“外放参考”中选择。参考暂不可用时，麦克风仍会继续传输。")
                 }
             },
             confirmButton = { TextButton(onClick = { help = false }) { Text("知道了") } },
         )
-        AnimatedVisibility(settingsOpen,
-            enter = slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { it / 6 } + fadeIn(tween(160)),
-            exit = slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { it / 6 } + fadeOut(tween(140)),
-            modifier = Modifier.fillMaxSize()) {
+        PageMotion(settingsMotion) {
             SettingsScreen(themeMode, onThemeModeChange) { settingsOpen = false }
+        }
+        PageMotion(privacyMotion) {
+            privacyDocument?.let { document ->
+                PrivacyScreen(document, onBack = closePrivacy,
+                    onContact = { uriHandler.openUri(PRIVACY_CONTACT_URL) })
+            }
+        }
+        PageMotion(licensesMotion) {
+            LicensesScreen(licenseText, licenseError, active = licensesOpen,
+                onBack = { licensesOpen = false }, onRetry = onShowLicenses)
         }
     }
 }

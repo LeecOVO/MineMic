@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="MineMic Android 与 iOS 移动端的隐私权政策、资料收集政策与范围。">
+  <title>隐私权政策与资料收集范围 · MineMic</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #f7f9f8; --panel: #fff; --text: #202923; --muted: #526159; --line: #d6e1da; --accent: #006b51; }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 1.5rem; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 1rem/1.85 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow-wrap: anywhere; }
+    main, footer { width: min(100% - 2.5rem, 48rem); margin-inline: auto; }
+    header { padding-block: 3.5rem 1.5rem; }
+    .brand { margin: 0 0 .5rem; color: var(--accent); font-weight: 700; font-size: 1.1rem; letter-spacing: .02em; }
+    h1 { font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.35; margin: 0 0 1rem; letter-spacing: -.025em; }
+    h2 { margin: 0 0 1rem; font-size: 1.45rem; line-height: 1.5; }
+    h3 { margin: 0 0 .7rem; font-size: 1.1rem; }
+    p { margin: .75rem 0; }
+    .meta, footer { color: var(--muted); font-size: .9rem; }
+    nav { display: flex; flex-wrap: wrap; gap: .65rem 1.5rem; padding-bottom: 2rem; }
+    a { color: var(--accent); text-underline-offset: .22em; }
+    a:hover { text-decoration-thickness: .13em; }
+    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 2px; }
+    article { margin-bottom: 2.5rem; }
+    section { margin-block: 1rem; padding: 1.5rem; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }
+    section > :last-child { margin-bottom: 0; }
+    dl { margin: 0; }
+    dt { font-weight: 650; margin-top: 1rem; }
+    dd { margin: .2rem 0 0; }
+    footer { border-top: 1px solid var(--line); padding-block: 1.5rem 2.5rem; }
+    .skip { position: absolute; top: .5rem; left: 1rem; padding: .25rem .75rem; background: var(--panel); transform: translateY(-200%); }
+    .skip:focus { transform: none; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #101713; --panel: #18221c; --text: #edf4ef; --muted: #b3c3b8; --line: #34483b; --accent: #80dfbb; } }
+    @media (max-width: 420px) { section { padding: 1.1rem; } header { padding-top: 2.5rem; } }
+    @media print { :root { --bg: #fff; --panel: #fff; --text: #000; --muted: #333; --line: #ccc; --accent: #000; } nav, .skip { display: none; } main, footer { width: 100%; } header { padding-top: 0; } section { border: 0; padding: 0; border-radius: 0; } h2, h3, dt { break-after: avoid; } }
+  </style>
+</head>
+<body>
+<a class="skip" href="#privacy">跳转到隐私权政策</a>
+<main id="top">
+  <header>
+    <p class="brand">MineMic</p>
+    <h1>隐私权政策<br>与资料收集范围</h1>
+    <p>让手机成为电脑麦克风。了解移动端如何访问、处理与传输你的资料。</p>
+    <p class="meta">政策更新日期：<time datetime="2026-10-23">2026年10月23日</time> · 适用 Android 与 iOS 移动端</p>
+  </header>
+  <nav aria-label="本页导航">
+    <a href="#privacy">隐私权政策</a>
+    <a href="#data">资料收集政策与范围</a>
+    <a href="#contact">联系维护者</a>
+  </nav>
+  <!-- Keep text and date aligned with shared/src/commonMain/kotlin/com/aiaixyz/minemic/ui/PrivacyDocuments.kt. -->
+  <article id="privacy" aria-labelledby="privacy-title">
+    <h2 id="privacy-title">隐私权政策</h2>
+    <section>
+      <h3>适用范围与维护者</h3>
+      <p>本政策适用于 MineMic 官方 Android 与 iOS 移动端，由 MineMic 开源项目维护者（GitHub：LeecOVO）提供。PC 客户端、接收音频的会议或游戏软件，以及操作系统服务各自的数据处理，不由本移动端政策代替。</p>
+      <p>MineMic 会访问麦克风，并把实时声音直接传给你连接的电脑。当前移动端不设账号，不接入广告、行为统计或自动崩溃上报服务，也不提供开发者云端音频服务。不能把这些情况理解为运行过程中不处理任何资料。</p>
+    </section>
+    <section>
+      <h3>声音如何处理</h3>
+      <p>连接成功且取得麦克风授权后，应用开始采集声音。实时传输、收音增强、降噪及回声抑制在手机上进行；移动端不把声音保存为录音文件，不用于语音转写、声纹识别、广告画像或模型训练。WebRTC 音频处理与 RNNoise 用于本地处理，不把音频提交给它们的云端服务。</p>
+      <p>回声抑制是可选功能。开启且 PC 支持时，PC 会把所选外放设备的播放声音回传手机，作为本地回声处理参考；其中可能包含会议、游戏或其他应用播放的声音。移动端不把参考音频另存为文件或作为独立参考流转发。关闭回声抑制后停止请求该参考流。</p>
+      <p>桌面游戏降噪只处理音频，不读取键盘按键、鼠标操作、屏幕画面或游戏内资料。</p>
+    </section>
+    <section>
+      <h3>通信对象与传输保护</h3>
+      <p>配对码模式会发现附近局域网中的 MineMic PC，并可能向多台候选 PC 发送配对码、设备显示名称及必要的随机会话资料，直到连接成功。手动连接则使用你输入的 IP 地址；你主动粘贴时，系统输入控件会按你的操作使用剪贴板内容，应用不在后台主动读取剪贴板。麦克风音频只在连接成功后发给当前连接的 PC，不经过 MineMic 运营服务器。</p>
+      <p>手动 IP 的实际通信路径由你的输入和网络路由决定。当前协议有会话和音频包校验，但未提供传输内容加密；请核对目标 PC，并使用可信网络。接收电脑及其他软件可能保存或继续传送你的声音，请同时检查它们的设置。</p>
+    </section>
+    <section>
+      <h3>权限与后台使用</h3>
+      <p>麦克风权限用于采音；局域网与网络权限用于发现、配对、重连和音频传输。Android 还声明网络状态、Wi-Fi 状态与麦克风前台服务相关权限，以支持连接及后台服务。当前应用不读取 Wi-Fi 密码，也不索取定位、通讯录、相机、相册、共享存储或广告跟踪权限。拒绝麦克风或局域网权限可能使对应功能不可用，但不影响阅读本政策。</p>
+      <p>锁屏或切到后台不等于结束采音。Android 采音时会显示前台服务通知；iOS 使用音频后台能力，并可选择在锁屏与灵动岛展示电脑名、连接状态、录音与静音状态及开始时间。锁屏状态可能被看得到屏幕的人看到。实时活动由本机更新，不通过 MineMic 服务器远程推送。</p>
+    </section>
+    <section>
+      <h3>本地保存与保留时间</h3>
+      <p>实时音频、处理参考、会话凭据及连接诊断状态主要用于运行期间的内存处理，不建立历史录音库或持久设备跟踪档案。断网重连期间会保留当前会话；PC 的独占连接可能继续保留，直到完成断开或由 PC 手动释放。</p>
+      <p>外观选择保存在本机；iOS 还会保存是否开启锁屏实时活动。配对码、IP 地址和展开状态等页面资料可能随操作系统的界面恢复机制保留。本机设置或恢复资料可能进入你启用的系统备份、迁移流程；这不等于应用向 MineMic 云端上传资料。</p>
+    </section>
+    <section>
+      <h3>你的控制与删除方式</h3>
+      <p>静音不等于停止采音：当前版本仍在手机上采集和处理声音，只是发往 PC 的麦克风内容替换为静音。要停止采音，请主动断开连接，或在系统设置撤销麦克风权限。关闭锁屏实时活动只隐藏状态卡片，不停止录音或释放 PC。</p>
+      <p>你可以关闭回声抑制、降噪及锁屏显示，或在系统设置管理权限。清除应用数据或卸载应用可移除本地设置；系统备份中的副本需在对应系统服务中管理。应用退出、卸载或网络中断，不保证 PC 的占用已经释放；必要时在 PC 上手动断开。</p>
+    </section>
+    <section>
+      <h3>第三方服务与主动反馈</h3>
+      <p>点击项目主页或反馈入口会打开 GitHub，网站可能按其自身政策处理 IP 地址、浏览器信息及你主动提交的内容。MineMic 不会自动附带录音、配对码或诊断包。操作系统自身的备份、通知、实时活动及诊断服务由系统设置和相应服务政策管理。</p>
+      <p>有隐私问题可通过项目反馈入口联系维护者。GitHub Issue 通常公开，请勿提交配对码、连接凭据、私人录音或其他个人资料；提交截图或日志前请先移除敏感内容。</p>
+    </section>
+    <section>
+      <h3>政策更新</h3>
+      <p>功能或资料处理方式变化时，维护者将随应用更新修订本页及更新日期。你可以在“关于”中离线查阅本政策和资料收集范围；阅读这些页面不需要同意新的权限，也不会启动录音或连接。</p>
+    </section>
+  </article>
+  <article id="data" aria-labelledby="data-title">
+    <h2 id="data-title">资料收集政策与范围</h2>
+    <p>本页列明功能运行时访问、处理、传输与保存的资料，不把“没有开发者云端收集”等同于“没有资料处理”。阅读本页不会启动采音或连接。</p>
+    <section>
+      <h3>麦克风声音</h3>
+      <dl>
+        <dt>范围</dt>
+        <dd>手机麦克风采集的实时音频，包括周围人声和环境声音。</dd>
+        <dt>用途</dt>
+        <dd>在连接成功并取得授权后，向电脑提供实时麦克风；可在手机本地执行增强与降噪。</dd>
+        <dt>去向</dt>
+        <dd>当前连接的 PC。静音时仍在本机采集、处理，但发往 PC 的麦克风内容为静音。</dd>
+        <dt>保留时间</dt>
+        <dd>用于实时处理的内存缓存；移动端不保存为录音文件。接收 PC 或其他软件的保存行为由其各自设置决定。</dd>
+      </dl>
+    </section>
+    <section>
+      <h3>外放参考音频 · 可选</h3>
+      <dl>
+        <dt>范围</dt>
+        <dd>PC 所选外放设备的播放声音，可能包含其他应用的声音。</dd>
+        <dt>用途</dt>
+        <dd>仅在回声抑制开启且 PC 支持时，用作手机本地回声处理参考。</dd>
+        <dt>去向</dt>
+        <dd>从 PC 回传手机；移动端不另存参考录音，也不作为独立参考流转发。</dd>
+        <dt>保留时间</dt>
+        <dd>仅供实时处理的内存缓存；关闭回声抑制后停止请求参考流。</dd>
+      </dl>
+    </section>
+    <section>
+      <h3>发现与配对资料</h3>
+      <dl>
+        <dt>范围</dt>
+        <dd>候选 PC 的名称、IP、端口，输入的配对码或 IP，以及手机的设备显示名称。Android 发送机型名称，iOS 发送“iPhone”。</dd>
+        <dt>用途</dt>
+        <dd>查找、区分与连接电脑。</dd>
+        <dt>去向</dt>
+        <dd>局域网发现服务、尝试连接的候选 PC，或你手动指定的 PC。配对尝试可能联系多台候选电脑。</dd>
+        <dt>保留时间</dt>
+        <dd>运行时状态；配对码与 IP 输入也可能由系统的页面恢复机制保留。不建立云端连接历史。</dd>
+      </dl>
+    </section>
+    <section>
+      <h3>随机会话资料与运行状态</h3>
+      <dl>
+        <dt>范围</dt>
+        <dd>连接时生成的随机标识、重连凭据与校验密钥，以及音频序号、时序、音量、处理状态和连接错误信息。</dd>
+        <dt>用途</dt>
+        <dd>维持独占、断网重连、音频包校验、实时处理及界面状态显示。随机标识不是永久设备标识。</dd>
+        <dt>去向</dt>
+        <dd>手机与相关 PC 会话；当前实现不向开发者上传行为统计或自动崩溃报告。</dd>
+        <dt>保留时间</dt>
+        <dd>主要保留在运行内存中；断网时保留重连会话。不建立持久的设备跟踪档案。</dd>
+      </dl>
+    </section>
+    <section>
+      <h3>外观、界面与开关偏好</h3>
+      <dl>
+        <dt>范围</dt>
+        <dd>外观选择、可恢复的表单与界面状态，以及 iOS 锁屏实时活动开关；应用也使用系统明暗、透明度及辅助功能偏好来绘制界面。</dd>
+        <dt>用途</dt>
+        <dd>恢复你的界面选择，并适配系统显示与辅助功能设置。</dd>
+        <dt>去向</dt>
+        <dd>本机应用与操作系统；不上传到 MineMic 运营服务器。</dd>
+        <dt>保留时间</dt>
+        <dd>外观与 iOS 锁屏开关保存至修改、清除应用数据或卸载；系统可能备份或恢复部分资料，备份副本需在系统服务中管理。</dd>
+      </dl>
+    </section>
+    <section>
+      <h3>系统通知与锁屏状态 · 按功能展示</h3>
+      <dl>
+        <dt>范围</dt>
+        <dd>Android 的麦克风使用通知；iOS 可选实时活动中的电脑名、连接、录音及静音状态、开始时间和随机会话标识。</dd>
+        <dt>用途</dt>
+        <dd>让你了解麦克风使用状态，并在支持的平台操作静音或断开。</dd>
+        <dt>去向</dt>
+        <dd>交给本机系统展示，可能被旁人看到；iOS 实时活动不包含配对码、重连令牌或音频内容，不使用 MineMic 服务器远程推送。</dd>
+        <dt>保留时间</dt>
+        <dd>由系统管理通知和活动展示。关闭卡片不会停止采音；应在应用或支持的系统入口主动断开。</dd>
+      </dl>
+    </section>
+  </article>
+  <section id="contact" aria-labelledby="contact-title">
+    <h2 id="contact-title">联系维护者</h2>
+    <p>维护者：LeeC（GitHub：LeecOVO）。隐私问题可通过 <a href="https://github.com/LeecOVO/MineMic/issues">MineMic 项目反馈入口</a>联系。</p>
+    <p>GitHub Issue 通常公开。请勿提交私人录音、配对码或会话凭据；截图与日志请先移除敏感内容。</p>
+    <p><a href="https://github.com/LeecOVO/MineMic">查看开源项目</a> · <a href="#top">返回顶部</a></p>
+  </section>
+</main>
+<footer>
+  <p>本页面未嵌入广告、分析脚本或外部字体。通过 GitHub Pages 托管时，GitHub 会为安全目的记录并保存访问者的 IP 地址；详见 <a href="https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages#data-collection">GitHub Pages 数据说明</a>及 <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub 隐私声明</a>。网页托管的访问记录与 MineMic 移动端实时音频处理不同。</p>
+  <p>© 2026 LeeC · MineMic</p>
+</footer>
+</body>
+</html>

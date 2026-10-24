@@ -1,16 +1,7 @@
 package com.aiaixyz.minemic
 
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.aiaixyz.minemic.connection.MicController
 import com.aiaixyz.minemic.connection.MicState
 import com.aiaixyz.minemic.connection.LockScreenControls
@@ -19,6 +10,7 @@ import com.aiaixyz.minemic.ui.MineMicTheme
 import com.aiaixyz.minemic.ui.AppearanceSettings
 import com.aiaixyz.minemic.ui.PlatformAppearance
 import com.aiaixyz.minemic.ui.rememberAppearanceSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import minemic.shared.generated.resources.Res
 import org.jetbrains.compose.resources.ExperimentalResourceApi
@@ -51,11 +43,13 @@ fun App(
     val audioLevel = remember(observedState) { { observedState?.value?.level ?: 0f } }
     val lockScreenState = lockScreenControls?.state?.collectAsState()?.value
     var licenses by remember { mutableStateOf<String?>(null) }
+    var licenseError by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     MineMicTheme(darkTheme = dark) {
         MineMicScreen(
             state = state,
-            nativeMaterialVisible = licenses == null,
+            licenseText = licenses,
+            licenseError = licenseError,
             audioLevel = audioLevel,
             themeMode = appearance.mode,
             onThemeModeChange = appearance::select,
@@ -73,21 +67,18 @@ fun App(
             onDisconnect = { controller?.disconnect() },
             onShowLicenses = {
                 scope.launch {
-                    licenses = runCatching { Res.readBytes("files/audio-processing-licenses.txt").decodeToString() }
-                        .getOrDefault("许可文件暂时无法读取，请在 MineMic 项目页面查看第三方许可。")
+                    if (licenses == null) {
+                        licenseError = false
+                        try {
+                            licenses = Res.readBytes("files/audio-processing-licenses.txt").decodeToString()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            licenseError = true
+                        }
+                    }
                 }
             },
         )
-        licenses?.let { text ->
-            AlertDialog(
-                onDismissRequest = { licenses = null },
-                title = { Text("第三方许可") },
-                text = {
-                    Text(text, Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
-                        style = MaterialTheme.typography.bodySmall)
-                },
-                confirmButton = { TextButton(onClick = { licenses = null }) { Text("关闭") } },
-            )
-        }
     }
 }

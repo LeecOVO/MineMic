@@ -93,7 +93,8 @@ class PcInteropTest {
             assertTrue(phoneA.state.value.ownsPc)
             waitFor { phoneA.state.value.phase == ConnectionPhase.CONNECTED && phoneA.state.value.recording }
             phoneA.disconnect(); waitFor { !phoneA.state.value.ownsPc && phoneA.state.value.phase == ConnectionPhase.IDLE }
-            phoneB.connect(code, ""); waitFor { phoneB.state.value.phase == ConnectionPhase.ERROR && phoneB.state.value.message.contains("配对码") }
+            phoneB.connect(code, ""); waitFor { phoneB.state.value.recording }
+            assertTrue(phoneB.state.value.ownsPc, "explicit disconnect keeps the same pairing code usable")
         } finally { phoneA.close(); phoneB.close(); process.destroy(); process.waitFor() }
     }
     @Test fun realPcReferenceExtensionAndUnsupportedNativeFallbackKeepMicrophoneWorking() = runBlocking {
@@ -108,6 +109,12 @@ class PcInteropTest {
             waitFor { native.validReferences.get() >= 10 && native.clockReplies.get() > 0 && phone.state.value.recording }
             // JVM deliberately has no native APM: enhanced mode must still upload raw PCM.
             assertTrue(phone.state.value.ownsPc)
+            // No native APM exists on JVM. Receiving valid reference must not be
+            // confused with AEC success, silence, or a reason to stop loopback.
+            delay(1800) // Past the former 1.5 second AEC-success timeout.
+            val before = native.validReferences.get()
+            delay(600)
+            assertTrue(native.validReferences.get() > before + 30, "reference was repeatedly paused because APM could not process it")
             phone.setEchoCancellation(false); delay(100)
             val stoppedAt = native.validReferences.get(); delay(250)
             assertEquals(stoppedAt, native.validReferences.get())

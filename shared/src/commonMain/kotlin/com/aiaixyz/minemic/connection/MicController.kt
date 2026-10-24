@@ -39,8 +39,7 @@ class MicController(private val platform: PhonePlatform) {
     private var clock = ClockSync()
     private var referenceRequested = false
     private var referencePaused = false
-    private var referenceStartedAt = 0L
-    private var lastEffectiveEcho = 0L
+    private var referenceFailure = ""
     private var referenceRetryAt = 0L
     private data class Session(val pc: LanComputer, val clientId: String, var token: String, var id: Long, var key: ByteArray, val supportsReference: Boolean)
     private sealed interface Event {
@@ -145,7 +144,7 @@ class MicController(private val platform: PhonePlatform) {
             var ping: Job? = null
             try {
                 clock = ClockSync(); referenceRequested = false; referencePaused = true; captureSequence = 0L
-                referenceRetryAt = 0L; lastEffectiveEcho = 0L
+                referenceRetryAt = 0L; referenceFailure = ""
                 beginAudio()
                 val processing = enhancer
                 platform.openAudio(s.pc.host, s.pc.port) { processing?.offerReference(it) }
@@ -169,10 +168,13 @@ class MicController(private val platform: PhonePlatform) {
                         if (t1 != null && t2 != null && t3 != null) clock.receive(t1, t2, t3, platform.monotonicMicros())
                     }
                     if (m["type"] == "reference" && m["state"] == "unavailable") {
+                        referenceFailure = m["detail"]?.take(200).orEmpty()
                         pauseReference()
                         update { it.copy(enhancementMessage = "PC 外放参考暂不可用，麦克风继续传输") }
                     }
-                    if (m["type"] == "disconnected") { clearLocal("PC 已断开连接，配对码已更新"); return }
+                    if (m["type"] == "disconnected") {
+                        clearLocal(if (m["reason"] == "stopped") "PC 已停止接收，配对码已更新" else "PC 已断开连接，可重新连接"); return
+                    }
                 }
             } catch (e: CancellationException) {
                 // A heartbeat timeout is recoverable; an explicit job cancellation is not.
@@ -190,7 +192,7 @@ class MicController(private val platform: PhonePlatform) {
                 } catch (e: CancellationException) { if (e !is TimeoutCancellationException) throw e }
                 catch (e: Exception) {
                     platform.closeControl()
-                    if (e is PairError && e.reason == "not_owner") { clearLocal("PC 已释放原连接，请使用新的配对码连接"); return }
+                    if (e is PairError && e.reason == "not_owner") { clearLocal("PC 已释放原连接，请重新连接"); return }
                 }
             }
         }
@@ -235,8 +237,8 @@ class MicController(private val platform: PhonePlatform) {
                 val pcm = gain.process(cleaned, inputGainDb)
                 if (capturePaused) continue
                 val now = platform.monotonicMicros()
-                if (result?.echo == true) lastEffectiveEcho = now
-                if (referenceRequested && now - maxOf(referenceStartedAt, lastEffectiveEcho) > 1500000) pauseReference()
+                // Missing loopback packets can mean silence, network jitter or native APM
+                // initialization. Stop/retry only on an explicit PC capture failure.
                 platform.sendAudio(packets.encode(sequence, pcm, muted))
                 if (sequence % 10 == 1L) {
                     var peak = 0
@@ -246,7 +248,7 @@ class MicController(private val platform: PhonePlatform) {
                     }
                     val dspMessage = when {
                         chosen.echo && !s.supportsReference -> (if (chosen.noise) result?.message?.plus("；") ?: "" else "") + "回声抑制需要新版 Windows PC"
-                        chosen.echo && now < referenceRetryAt -> (if (chosen.noise) result?.message?.plus("；") ?: "" else "") + "回声参考暂停，稍后自动重试"
+                        chosen.echo && now < referenceRetryAt -> (if (chosen.noise) result?.message?.plus("；") ?: "" else "") + "PC 外放参考不可用，稍后重试" + if (referenceFailure.isEmpty()) "" else "：$referenceFailure"
                         else -> result?.message ?: "增强已关闭"
                     }
                     val gainMessage = if (inputGainDb > 0f) "收音增强 +${inputGainDb.toInt()} dB" else ""
@@ -285,7 +287,6 @@ class MicController(private val platform: PhonePlatform) {
         val wanted = options.echo && s.supportsReference && !referencePaused && platform.monotonicMicros() >= referenceRetryAt
         if (referenceRequested == wanted) return
         referenceRequested = wanted
-        if (wanted) referenceStartedAt = platform.monotonicMicros()
         platform.sendControl(ControlJson.encode(mapOf("type" to "reference", "enabled" to if (wanted) "1" else "0")))
     }
     private fun pauseReference() {
@@ -336,7 +337,7 @@ class MicController(private val platform: PhonePlatform) {
                     } catch (e: CancellationException) { if (e !is TimeoutCancellationException) throw e }
                     catch (_: Exception) { } finally { lines.close(); platform.closeControl() }
                 }
-                if (released) clearLocal("已断开，PC 配对码已更新")
+                if (released) clearLocal("已断开连接")
                 else update { it.copy(phase = ConnectionPhase.RECONNECTING, message = "未能通知 PC，原占用仍保留；请重试断开或在 PC 上手动断开") }
             }
         }

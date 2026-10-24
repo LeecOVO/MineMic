@@ -87,6 +87,12 @@ def prepare():
 
 def main(target):
     source, toolbin = prepare()
+    if target.startswith('ios'):
+        # Static linking drops SDK resources; Xcode copies this companion bundle.
+        upstream = source/'subprojects'/ABSL/'PrivacyInfo.xcprivacy'
+        bundled = ROOT/'iosApp/iosApp/AbseilPrivacy.bundle/PrivacyInfo.xcprivacy'
+        if bundled.read_bytes() != upstream.read_bytes():
+            raise RuntimeError('Bundled Abseil privacy manifest does not match the pinned SDK')
     output=BUILD/target; output.mkdir(parents=True,exist_ok=True)
     build=output/'meson'
     env=os.environ.copy();env['PATH']=str(toolbin)+os.pathsep+env.get('PATH','')

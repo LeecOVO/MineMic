@@ -62,7 +62,48 @@ class AudioEnhancerTest {
             assertEquals(1, rendered.get()); assertContentEquals(ByteArray(960) { 77 }, out.pcm)
             val raw = ByteArray(960) { 42 }
             val missing = enhancer.enhance(CapturedAudio(raw, now() + 90000), EnhancementOptions(echo = true), ClockSync.Mapping(0, now(), 1000))
-            assertSame(raw, missing.pcm); assertTrue(resets.get() > 0)
+            assertSame(raw, missing.pcm); assertEquals(0, resets.get(), "one missing reference must not discard AEC adaptation")
+        } finally { enhancer.close() }
+    }
+    @Test fun timestampedHardwareBatchCanUseAlreadyReceivedReference() = runBlocking {
+        val rendered = AtomicInteger()
+        val logicalNow = 1000000L
+        val enhancer = AudioEnhancer(7, key, { logicalNow }, ::hmac) { object : AudioProcessor {
+            override fun render(stereo: ByteArray): Boolean { rendered.incrementAndGet(); return true }
+            override fun process(mono: ByteArray, noise: Boolean, echo: Boolean) = if (echo) ByteArray(960) { 77 } else mono
+            override fun resetEcho() {}
+            override fun close() {}
+        } }
+        try {
+            repeat(3) { enhancer.enhance(CapturedAudio(ByteArray(960), logicalNow), EnhancementOptions(noise = true), null) }
+            val captured = logicalNow - 90000
+            enhancer.offerReference(reference(0, captured)); enhancer.offerReference(reference(1, captured))
+            val result = enhancer.enhance(CapturedAudio(ByteArray(960), captured), EnhancementOptions(echo = true), ClockSync.Mapping(0, logicalNow, 1000))
+            assertTrue(result.echo, "valid historical hardware frames must not expire before processing starts")
+            assertEquals(1, rendered.get())
+            assertContentEquals(ByteArray(960) { 77 }, result.pcm)
+        } finally { enhancer.close() }
+    }
+    @Test fun delayedReferenceCatchupDoesNotResetContinuousRenderStream() = runBlocking {
+        val rendered = AtomicInteger(); val resets = AtomicInteger()
+        val logicalNow = 1000000L
+        val enhancer = AudioEnhancer(7, key, { logicalNow }, ::hmac) { object : AudioProcessor {
+            override fun render(stereo: ByteArray): Boolean { rendered.incrementAndGet(); return true }
+            override fun process(mono: ByteArray, noise: Boolean, echo: Boolean) = mono
+            override fun resetEcho() { resets.incrementAndGet() }
+            override fun close() {}
+        } }
+        try {
+            repeat(3) { enhancer.enhance(CapturedAudio(ByteArray(960), logicalNow), EnhancementOptions(noise = true), null) }
+            val first = logicalNow - 60000
+            for (channel in 0..1) enhancer.offerReference(reference(channel, first, 0))
+            assertTrue(enhancer.enhance(CapturedAudio(ByteArray(960), first), EnhancementOptions(echo = true), ClockSync.Mapping(0, logicalNow, 1000)).echo)
+            val initialResets = resets.get()
+            // Reference for the intervening capture arrived late but is complete.
+            for (sequence in 1L..2L) for (channel in 0..1) enhancer.offerReference(reference(channel, first + sequence*10000, sequence))
+            assertTrue(enhancer.enhance(CapturedAudio(ByteArray(960), first + 20000), EnhancementOptions(echo = true), ClockSync.Mapping(0, logicalNow, 1000)).echo)
+            assertEquals(3, rendered.get(), "all continuous render frames reach native AEC")
+            assertEquals(initialResets, resets.get(), "a delayed reference must not reset an otherwise continuous stream")
         } finally { enhancer.close() }
     }
     @Test fun slowNativeProcessingCannotHoldSenderOrPublishLateOutput() = runBlocking {
