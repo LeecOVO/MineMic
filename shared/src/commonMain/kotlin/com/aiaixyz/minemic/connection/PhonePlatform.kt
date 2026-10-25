@@ -15,7 +15,9 @@ interface PhonePlatform {
     fun openControl(host: String, port: Int, onReady: () -> Unit, onLine: (String) -> Unit, onClosed: () -> Unit, onError: (String) -> Unit)
     fun sendControl(line: String)
     fun closeControl()
-    fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit)
+    /** Detach the current socket and best-effort flush one final line within 200 ms. */
+    fun finishControl(line: String, timeoutMillis: Int = 200) { sendControl(line); closeControl() }
+    fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit, onError: (String) -> Unit)
     fun sendAudio(bytes: ByteArray)
     fun closeAudio()
     fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit)

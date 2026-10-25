@@ -40,19 +40,12 @@ final class LiveActivityCoordinator {
                   self.latest?.phase != .disconnecting else { return false }
             if let muted { controller.setMuted(value: muted) }
             else {
-                // Keep the user-initiated intent alive until the existing async
-                // release protocol completes; do not return before it can run.
+                // UI/capture end immediately; allow only the short transport
+                // cleanup deadline to finish while the app is backgrounded.
                 let cleanup = DisconnectCleanup()
                 defer { cleanup.end() }
                 controller.disconnect()
-                var releasing = false
-                for _ in 0..<70 {
-                    if Task.isCancelled || cleanup.expired { break }
-                    try? await Task.sleep(for: .milliseconds(100))
-                    if self.policy.sessionID != id || self.latest?.ownsPc != true { break }
-                    if self.latest?.phase == .disconnecting { releasing = true }
-                    if releasing && self.latest?.phase == .reconnecting { break }
-                }
+                if !Task.isCancelled && !cleanup.expired { try? await Task.sleep(for: .milliseconds(200)) }
             }
             return true
         }
@@ -76,6 +69,13 @@ final class LiveActivityCoordinator {
         let oldID = policy.sessionID
         policy.update(ownsPC: state.ownsPc)
         latest = state
+        if !state.ownsPc {
+            monitor?.cancel(); monitor = nil; heartbeat?.cancel(); heartbeat = nil
+            if let old = activity {
+                activity = nil
+                Task { await old.end(nil, dismissalPolicy: .immediate) }
+            }
+        }
         let next: MineMicActivityAttributes.ContentState?
         if let start = policy.startedAt {
             let phase = state.phase == .reconnecting ? "reconnecting" :
@@ -176,11 +176,12 @@ final class LiveActivityCoordinator {
     deinit {
         subscription?.cancel(); worker?.cancel(); monitor?.cancel()
         heartbeat?.cancel(); authorizationMonitor?.cancel()
+        if let old = activity { Task { await old.end(nil, dismissalPolicy: .immediate) } }
     }
 }
 
 /// A bounded background assertion for explicit disconnect cleanup, never for
-/// recording or general residency. Failure leaves the PC owner retained.
+/// recording or general residency. Transport failure never holds local UI open.
 @MainActor
 private final class DisconnectCleanup {
     private var identifier = UIBackgroundTaskIdentifier.invalid

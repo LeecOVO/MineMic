@@ -9,6 +9,16 @@ internal actual fun createAudioProcessor(): AudioProcessor? {
     return object : AudioProcessor {
         private var ptr = handle
         private var closed = false
+        override val supportsReferenceResampling = true
+        override fun bufferReference(stereo: ByteArray, valid: Boolean): Boolean = !closed && stereo.size == 1920 && stereo.usePinned {
+            mm_apm_buffer_reference(ptr, it.addressOf(0).reinterpret(), if (valid) 1 else 0) == 0
+        }
+        override fun readReference(ratio: Double): ResampledReference? {
+            if (closed) return null
+            val pcm = ByteArray(1920)
+            val status = pcm.usePinned { mm_apm_read_reference(ptr, ratio, it.addressOf(0).reinterpret()) }
+            return if (status == 0 || status == 2) ResampledReference(pcm, status == 0) else null
+        }
         override fun setDeskNoise(enabled: Boolean) { if (!closed) mm_apm_set_desk_noise(ptr, if (enabled) 1 else 0) }
         override fun render(stereo: ByteArray): Boolean = !closed && stereo.size == 1920 && stereo.usePinned {
             mm_apm_render(ptr, it.addressOf(0).reinterpret()) == 0

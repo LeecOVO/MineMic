@@ -23,9 +23,11 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
     private val generation = AtomicInteger()
     @Volatile private var tcp: Socket? = null
     @Volatile private var udp: DatagramSocket? = null
+    private var audioFailure: ((String) -> Unit)? = null
     private var listener: NsdManager.DiscoveryListener? = null
     private var discoveryEpoch = 0
     private val recording = AtomicBoolean(false)
+    private val captureGeneration = AtomicInteger()
     @Volatile private var recorder: AudioRecord? = null
     private var captureThread: Thread? = null
     private val authenticator = HmacSha256()
@@ -107,24 +109,54 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
         network.execute { if (epoch == generation.get()) runCatching { socket?.getOutputStream()?.write((line + "\n").toByteArray()) } }
     }
     @Synchronized override fun closeControl() { generation.incrementAndGet(); val old = tcp; tcp = null; runCatching { old?.close() } }
-    override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit) {
+    override fun finishControl(line: String, timeoutMillis: Int) {
+        val old = synchronized(this) { generation.incrementAndGet(); tcp.also { tcp = null } } ?: return
+        main.postDelayed({ runCatching { old.close() } }, timeoutMillis.coerceIn(1, 200).toLong())
+        network.execute {
+            try { old.getOutputStream().write((line + "\n").toByteArray()); old.shutdownOutput() }
+            catch (_: Exception) { }
+            finally { runCatching { old.close() } }
+        }
+    }
+    override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit, onError: (String) -> Unit) {
         closeAudio()
-        val socket = DatagramSocket().apply { connect(InetAddress.getByName(host), port); receiveBufferSize = 32768 }
-        udp = socket
+        val socket = try {
+            DatagramSocket().also { value ->
+                try { value.connect(InetAddress.getByName(host), port); value.receiveBufferSize = 32768 }
+                catch (e: Exception) { value.close(); throw e }
+            }
+        } catch (e: Exception) { onError(e.message ?: "音频通道打开失败"); return }
+        synchronized(this) { udp = socket; audioFailure = onError }
         Thread({
             val storage = ByteArray(1201)
             while (!socket.isClosed) {
                 try {
                     val packet = DatagramPacket(storage, storage.size); socket.receive(packet)
-                    if (packet.length <= 1200) onReference(storage.copyOf(packet.length))
-                } catch (_: Exception) { break }
+                    if (udp === socket && packet.length <= 1200) onReference(storage.copyOf(packet.length))
+                } catch (e: Exception) { failAudio(socket, e); break }
             }
         }, "MineMic-reference").apply { isDaemon = true; start() }
     }
-    override fun sendAudio(bytes: ByteArray) { runCatching { udp?.send(DatagramPacket(bytes, bytes.size)) } }
-    override fun closeAudio() { udp?.close(); udp = null; authenticator.clear() }
-    override fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit) {
+    override fun sendAudio(bytes: ByteArray) {
+        val socket = udp ?: return
+        try { socket.send(DatagramPacket(bytes, bytes.size)) }
+        catch (e: Exception) { failAudio(socket, e) }
+    }
+    private fun failAudio(socket: DatagramSocket, error: Exception) {
+        val callback = synchronized(this) {
+            if (udp !== socket) return
+            udp = null
+            audioFailure.also { audioFailure = null }
+        }
+        socket.close(); callback?.invoke(error.message ?: "音频通道异常")
+    }
+    override fun closeAudio() {
+        val old = synchronized(this) { val old = udp; udp = null; audioFailure = null; old }
+        old?.close(); authenticator.clear()
+    }
+    @Synchronized override fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit) {
         stopAudio()
+        val epoch = captureGeneration.get()
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             onError("请先允许麦克风权限"); return
         }
@@ -138,16 +170,19 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
                 check(minimum > 0) { "设备不支持 48 kHz 录音" }
                 audio = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 48000, AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 3840))
-                recorder = audio
+                synchronized(this) {
+                    if (epoch != captureGeneration.get()) return@Thread
+                    recorder = audio
+                }
                 check(audio.state == AudioRecord.STATE_INITIALIZED) { "录音设备初始化失败" }
                 audio.startRecording()
                 check(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "麦克风被其他应用占用" }
                 onState(true, "手机麦克风正在传输")
                 val frame = ByteArray(960); var offset = 0; var totalFrames = 0L
                 val timestamp = AudioTimestamp()
-                while (recording.get()) {
+                while (recording.get() && epoch == captureGeneration.get()) {
                     val count = audio.read(frame, offset, frame.size - offset, AudioRecord.READ_BLOCKING)
-                    if (!recording.get()) break
+                    if (!recording.get() || epoch != captureGeneration.get()) break
                     check(count > 0) { "录音读取失败：$count" }
                     offset += count
                     if (offset == frame.size) {
@@ -158,17 +193,24 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
                         onFrame(CapturedAudio(frame.copyOf(), captured)); offset = 0
                     }
                 }
-            } catch (e: Exception) { if (recording.getAndSet(false)) onError(e.message ?: "录音失败") }
+            } catch (e: Exception) { synchronized(this) { if (epoch == captureGeneration.get() && recording.getAndSet(false)) onError(e.message ?: "录音失败") } }
             finally {
-                runCatching { audio?.stop() }; audio?.release(); recorder = null
-                context.stopService(Intent(context, MicForegroundService::class.java))
+                runCatching { audio?.stop() }; audio?.release()
+                synchronized(this) {
+                    if (recorder === audio) recorder = null
+                    if (epoch == captureGeneration.get()) context.stopService(Intent(context, MicForegroundService::class.java))
+                }
             }
         }, "MineMic-microphone").apply { start() }
     }
     override fun stopAudio() {
-        recording.set(false); runCatching { recorder?.stop() }
-        val old = captureThread; captureThread = null
-        if (old != null && old != Thread.currentThread()) old.join(1000)
-        context.stopService(Intent(context, MicForegroundService::class.java))
+        val old = synchronized(this) {
+            recording.set(false); captureGeneration.incrementAndGet(); captureThread = null
+            context.stopService(Intent(context, MicForegroundService::class.java))
+            recorder.also { recorder = null }
+        }
+        // Stop interrupts a blocking read. The capture thread alone releases its
+        // recorder; an old completion cannot stop a later session's service.
+        if (old != null) Thread({ runCatching { old.stop() } }, "MineMic-stop-capture").apply { isDaemon = true; start() }
     }
 }

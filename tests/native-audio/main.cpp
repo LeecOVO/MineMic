@@ -6,12 +6,44 @@
 #include <cstdio>
 #include <cstdint>
 #include <vector>
+#include <limits>
 
 static void put(uint8_t* p, int value) { const auto n=static_cast<uint16_t>(value);p[0]=n;p[1]=n>>8; }
 static int sample(const uint8_t* p) { return static_cast<int16_t>(p[0] | uint16_t(p[1])<<8); }
 static uint32_t randomState=7;
 static double noise() { randomState=randomState*1664525u+1013904223u;return (int32_t(randomState)>>16)/32768.; }
 int main() {
+ // Bounded FIFO and continuous stereo Sinc resampling are independent of AEC.
+ for (const double ratio : {.9998, 1.0002}) {
+  void* clock=mm_apm_create(); assert(clock);
+  std::array<uint8_t,1920> source{}, converted{};
+  for(int i=0;i<480;i++) { put(source.data()+4*i,1000); put(source.data()+4*i+2,-2000); }
+  assert(mm_apm_buffer_reference(clock,source.data(),1)==0);
+  assert(mm_apm_read_reference(clock,ratio,converted.data())==1);
+  int supplied=1, produced=0;
+  for(int tick=0;tick<30000;tick++) {
+   const int due=2+int((tick+1)*ratio);
+   while(supplied<due) { assert(mm_apm_buffer_reference(clock,source.data(),1)==0); supplied++; }
+   assert(mm_apm_read_reference(clock,ratio,converted.data())==0); produced++;
+   for(int i=40;i<480;i++) {
+    assert(std::abs(sample(converted.data()+4*i)-1000)<=2);
+    assert(std::abs(sample(converted.data()+4*i+2)+2000)<=2);
+   }
+  }
+  std::printf("Continuous stereo resampling: ratio=%.7f, %d frames, no queue overflow\n",ratio,produced);
+  mm_apm_reset_echo(clock);
+  assert(mm_apm_buffer_reference(clock,source.data(),0)==0);
+  for(int i=0;i<3;i++) assert(mm_apm_buffer_reference(clock,source.data(),1)==0);
+  assert(mm_apm_read_reference(clock,1.,converted.data())==2);
+  assert(mm_apm_read_reference(clock,1.,converted.data())==2);
+  assert(mm_apm_read_reference(clock,1.,converted.data())==0);
+  mm_apm_reset_echo(clock);
+  int accepted=0;
+  while(mm_apm_buffer_reference(clock,source.data(),1)==0) accepted++;
+  assert(accepted==17);
+  assert(mm_apm_read_reference(clock,std::numeric_limits<double>::quiet_NaN(),converted.data())<0);
+  mm_apm_destroy(clock);
+ }
  void* apm=mm_apm_create(); assert(apm);
  std::array<uint8_t,960> input{},output{};
  std::array<uint8_t,1920> render{};

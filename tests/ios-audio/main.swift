@@ -147,3 +147,20 @@ do {
     check(policy.sessionID != first && !policy.acceptsAction(for: first), "new owner rejects stale card commands")
 }
 print("iOS Live Activity presentation ownership and stale-action policy tests passed")
+
+// Old NWConnection completions must not stall or decrement a resumed stream.
+do {
+    let gate = IOSAudioSendGate()
+    let old = (0..<16).map { _ in gate.reserve()! }
+    check(gate.reserve() == nil, "network submissions must stay bounded")
+    gate.reset()
+    check(!gate.isCurrent(old[0]), "queued packets from the old audio session must be discarded")
+    let resumed = (0..<16).map { _ in gate.reserve()! }
+    for token in old { gate.release(token) }
+    check(gate.reserve() == nil, "late old completions cannot free current reservations")
+    gate.release(resumed[0])
+    check(gate.reserve() != nil && gate.reserve() == nil, "a current completion frees exactly one slot")
+    gate.reset()
+    check(gate.reserve() != nil, "cancelling outstanding sends must not block a resumed connection")
+}
+print("iOS bounded audio-send generations and stale-completion tests passed")

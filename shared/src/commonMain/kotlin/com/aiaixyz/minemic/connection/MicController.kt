@@ -29,6 +29,11 @@ class MicController(private val platform: PhonePlatform) {
     private var audioJob: Job? = null
     private var captureWatchdog: Job? = null
     private var releaseJob: Job? = null
+    private var activeEvents: Channel<Event>? = null
+    private var intentionalRelease = false
+    private var captureFrames: Channel<Pair<Long, CapturedAudio>>? = null
+    private data class AbandonedOwner(val pc: LanComputer, val clientId: String, val token: String)
+    private val pendingReleases = ArrayDeque<AbandonedOwner>()
     private var session: Session? = null
     private var muted = false
     private var inputGainDb = 0f
@@ -40,13 +45,14 @@ class MicController(private val platform: PhonePlatform) {
     private var referenceRequested = false
     private var referencePaused = false
     private var referenceFailure = ""
+    private var referenceWaitDetail = ""
     private var referenceRetryAt = 0L
-    private data class Session(val pc: LanComputer, val clientId: String, var token: String, var id: Long, var key: ByteArray, val supportsReference: Boolean)
+    private data class Session(val pc: LanComputer, val clientId: String, var token: String, var id: Long, var key: ByteArray, val supportsReference: Boolean, val instance: String)
     private sealed interface Event {
         data class Line(val fields: Map<String, String>) : Event
         data class Closed(val reason: String) : Event
     }
-    private class PairError(val reason: String) : Exception(reason)
+    private class PairError(val reason: String, val instance: String = "") : Exception(reason)
     private fun update(block: (MicState) -> MicState) { mutableState.value = block(mutableState.value) }
 
     fun observeState(observer: (MicState) -> Unit): MicStateSubscription {
@@ -62,7 +68,8 @@ class MicController(private val platform: PhonePlatform) {
 
     fun connect(code: String, host: String) {
         scope.launch {
-            if (session != null || connectionJob?.isActive == true || releaseJob?.isActive == true) return@launch
+            if (session != null || connectionJob?.isActive == true) return@launch
+            releaseJob?.cancelAndJoin(); releaseJob = null
             if (host.isBlank() && !Wire.validCode(code) || host.isNotBlank() && !Wire.validIpv4(host.trim())) {
                 update { it.copy(phase = ConnectionPhase.ERROR, message = if (host.isBlank()) "请输入完整的 6 位数字配对码" else "请输入有效的 PC IPv4 地址") }
                 return@launch
@@ -79,6 +86,9 @@ class MicController(private val platform: PhonePlatform) {
             for (pc in candidates) {
                 update { it.copy(phase = ConnectionPhase.CONNECTING, message = "正在连接 ${pc.name}…") }
                 try {
+                    pendingReleases.firstOrNull { it.pc.host == pc.host && it.pc.port == pc.port }?.let {
+                        if (notifyRelease(it)) pendingReleases.remove(it)
+                    }
                     val (channel, welcome) = open(pc, mapOf("type" to "connect", "mode" to if (host.isEmpty()) "code" else "manual",
                         "code" to code, "clientId" to clientId, "nonce" to nonce, "name" to platform.deviceName()))
                     require(welcome["nonce"] == nonce)
@@ -118,7 +128,7 @@ class MicController(private val platform: PhonePlatform) {
             withTimeout(3500) {
                 ready.await(); platform.sendControl(ControlJson.encode(request))
                 val reply = next(channel)
-                if (reply["type"] == "error") throw PairError(reply["reason"] ?: "unreachable")
+                if (reply["type"] == "error") throw PairError(reply["reason"] ?: "unreachable", reply["instance"].orEmpty())
                 require(reply["type"] == "welcome" && reply["nonce"] == request["nonce"])
                 channel to reply
             }
@@ -130,7 +140,7 @@ class MicController(private val platform: PhonePlatform) {
         require(id in 1..0xffffffffL)
         val token = m["token"] ?: error("Missing token"); Wire.unhex(token)
         val port = m["port"]?.toIntOrNull() ?: error("Missing port"); require(port in 1024..65535)
-        return Session(pc.copy(port = port, name = m["pcName"] ?: pc.name), clientId, token, id, Wire.unhex(m["key"] ?: ""), m["caps"]?.split(",")?.contains(REFERENCE_CAPABILITY) == true)
+        return Session(pc.copy(port = port, name = m["pcName"] ?: pc.name), clientId, token, id, Wire.unhex(m["key"] ?: ""), m["caps"]?.split(",")?.contains(REFERENCE_CAPABILITY) == true, m["instance"].orEmpty())
     }
     private suspend fun next(channel: Channel<Event>): Map<String, String> = when (val e = channel.receive()) {
         is Event.Line -> e.fields
@@ -140,14 +150,21 @@ class MicController(private val platform: PhonePlatform) {
         var channel = initial
         while (currentCoroutineContext().isActive && session != null) {
             val s = session ?: return
+            activeEvents = channel
             update { it.copy(phase = ConnectionPhase.CONNECTED, message = "已连接，PC 已为本手机保留", pcName = s.pc.name, ownsPc = true) }
             var ping: Job? = null
+            var audioTransportFailed = false
             try {
                 clock = ClockSync(); referenceRequested = false; referencePaused = true; captureSequence = 0L
-                referenceRetryAt = 0L; referenceFailure = ""
+                referenceRetryAt = 0L; referenceFailure = ""; referenceWaitDetail = ""
                 beginAudio()
                 val processing = enhancer
-                platform.openAudio(s.pc.host, s.pc.port) { processing?.offerReference(it) }
+                // Bind callbacks to this attempt, never the mutable channel used by a later resume.
+                val activeChannel = channel
+                platform.openAudio(s.pc.host, s.pc.port, { processing?.offerReference(it) }, {
+                    if (activeChannel.trySend(Event.Closed("audio_transport")).isFailure)
+                        activeChannel.close(PairError("audio_transport"))
+                })
                 requestReference()
                 ping = scope.launch {
                     var samples = 0
@@ -167,32 +184,54 @@ class MicController(private val platform: PhonePlatform) {
                         val t1 = m["t1"]?.toLongOrNull(); val t2 = m["t2"]?.toLongOrNull(); val t3 = m["t3"]?.toLongOrNull()
                         if (t1 != null && t2 != null && t3 != null) clock.receive(t1, t2, t3, platform.monotonicMicros())
                     }
+                    if (m["type"] == "reference") {
+                        referenceWaitDetail = if (m["state"] == "waiting") m["detail"]?.take(200).orEmpty() else ""
+                    }
                     if (m["type"] == "reference" && m["state"] == "unavailable") {
                         referenceFailure = m["detail"]?.take(200).orEmpty()
                         pauseReference()
                         update { it.copy(enhancementMessage = "PC 外放参考暂不可用，麦克风继续传输") }
                     }
                     if (m["type"] == "disconnected") {
+                        m["closeId"]?.let { platform.finishControl(ControlJson.encode(mapOf("type" to "disconnect_ack", "closeId" to it))) }
                         clearLocal(if (m["reason"] == "stopped") "PC 已停止接收，配对码已更新" else "PC 已断开连接，可重新连接"); return
                     }
                 }
             } catch (e: CancellationException) {
                 // A heartbeat timeout is recoverable; an explicit job cancellation is not.
                 if (e !is TimeoutCancellationException) throw e
+            } catch (e: PairError) {
+                audioTransportFailed = e.reason == "audio_transport"
             } catch (_: Exception) {
                 // Network loss never transfers PC ownership to a different phone.
-            } finally { ping?.cancel(); stopCapture(); platform.closeAudio(); channel.close(); platform.closeControl() }
-            update { it.copy(phase = ConnectionPhase.RECONNECTING, recording = false, level = 0f, message = "连接中断，正在重连原 PC…") }
+            } finally {
+                ping?.cancel(); stopCapture(); platform.closeAudio()
+                if (!intentionalRelease) { channel.close(); platform.closeControl(); if (activeEvents === channel) activeEvents = null }
+            }
+            update { it.copy(phase = ConnectionPhase.RECONNECTING, recording = false, level = 0f,
+                message = if (audioTransportFailed) "音频通道异常，正在恢复原 PC 连接…" else "连接中断，正在重连原 PC…") }
             while (currentCoroutineContext().isActive) {
                 delay(1200)
                 try {
                     val nonce = Wire.hex(platform.randomBytes(16))
                     val (newChannel, welcome) = open(s.pc, mapOf("type" to "resume", "clientId" to s.clientId, "token" to s.token, "nonce" to nonce))
-                    session = parseSession(s.pc, s.clientId, welcome); channel = newChannel; break
+                    s.key.fill(0); session = parseSession(s.pc, s.clientId, welcome); channel = newChannel; break
                 } catch (e: CancellationException) { if (e !is TimeoutCancellationException) throw e }
                 catch (e: Exception) {
                     platform.closeControl()
-                    if (e is PairError && e.reason == "not_owner") { clearLocal("PC 已释放原连接，请重新连接"); return }
+                    if (e is PairError && e.reason == "not_owner") {
+                        if (s.instance.isNotEmpty() && e.instance.isNotEmpty() && s.instance != e.instance) {
+                            // A different process has no old in-memory owner.
+                            // Reclaim through normal first-owner arbitration.
+                            try {
+                                val nonce = Wire.hex(platform.randomBytes(16))
+                                val (fresh, welcome) = open(s.pc, mapOf("type" to "connect", "mode" to "manual", "code" to "",
+                                    "clientId" to s.clientId, "nonce" to nonce, "name" to platform.deviceName()))
+                                s.key.fill(0); session = parseSession(s.pc, s.clientId, welcome); channel = fresh; break
+                            } catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { platform.closeControl() }
+                        } else { clearLocal("PC 已释放原连接，可重新连接"); return }
+                    }
                 }
             }
         }
@@ -206,6 +245,7 @@ class MicController(private val platform: PhonePlatform) {
         // channel discarded valid iOS batches before this coroutine could run.
         // Keep at most 160 ms; on sustained overload prefer recent speech.
         val frames = Channel<Pair<Long, CapturedAudio>>(16, BufferOverflow.DROP_OLDEST)
+        captureFrames = frames
         var capturePaused = false
         var frameTimedOut = false
         var lastFrameAt = platform.monotonicMicros()
@@ -232,7 +272,8 @@ class MicController(private val platform: PhonePlatform) {
                 val chosen = options
                 val result = if (chosen.noise || chosen.echo) enhancer?.enhance(frame,
                     chosen.copy(echo = chosen.echo && s.supportsReference && referenceRequested),
-                    clock.current(platform.monotonicMicros())?.takeIf { platform.monotonicMicros() - frame.capturedAtMicros in -20000L..200000L }) else null
+                    clock.current(platform.monotonicMicros())?.takeIf { platform.monotonicMicros() - frame.capturedAtMicros in -20000L..200000L },
+                    referenceWaitDetail) else null
                 val cleaned = if (options == chosen) result?.pcm ?: frame.pcm else frame.pcm
                 val pcm = gain.process(cleaned, inputGainDb)
                 if (capturePaused) continue
@@ -259,7 +300,7 @@ class MicController(private val platform: PhonePlatform) {
                 }
             }
         }
-        platform.startAudio({ frames.trySend(captureSequence++ to it) }, { error -> scope.launch {
+        platform.startAudio({ if (epoch == captureEpoch) frames.trySend(captureSequence++ to it) }, { error -> scope.launch {
             if (epoch == captureEpoch) {
                 capturePaused = true; captureWatchdog?.cancel()
                 frames.cancel(); audioJob?.cancel()
@@ -278,6 +319,7 @@ class MicController(private val platform: PhonePlatform) {
     }
     private fun stopCapture(keepEnhancer: Boolean = false) {
         captureEpoch++; platform.stopAudio()
+        captureFrames?.cancel(); captureFrames = null
         captureWatchdog?.cancel(); captureWatchdog = null
         audioJob?.cancel(); audioJob = null
         if (!keepEnhancer) { enhancer?.close(); enhancer = null }
@@ -315,37 +357,65 @@ class MicController(private val platform: PhonePlatform) {
     fun retryMicrophone() { scope.launch { if (session != null && state.value.phase == ConnectionPhase.CONNECTED) beginAudio() } }
     fun disconnect() {
         scope.launch {
-            if (releaseJob?.isActive == true) return@launch
+            if (intentionalRelease || releaseJob?.isActive == true) return@launch
+            val s = session
+            val events = activeEvents
+            val previousConnection = connectionJob; connectionJob = null
+            intentionalRelease = true
+            clearLocal("已断开连接", closeControl = false)
+            val abandoned = s?.let { AbandonedOwner(it.pc, it.clientId, it.token) }
+            if (abandoned != null) {
+                pendingReleases.removeAll { it.pc.host == abandoned.pc.host && it.pc.port == abandoned.pc.port }
+                if (pendingReleases.size >= 4) pendingReleases.removeFirst()
+                pendingReleases.addLast(abandoned)
+            }
             releaseJob = scope.launch {
-                connectionJob?.cancelAndJoin(); stopCapture(); platform.closeAudio(); platform.closeControl()
-                val s = session ?: run { clearLocal("已取消连接"); return@launch }
-                update { it.copy(phase = ConnectionPhase.DISCONNECTING, recording = false, level = 0f, message = "正在通知 PC 断开连接…") }
-                var released = false
-                repeat(3) {
-                    if (released) return@repeat
-                    val ready = CompletableDeferred<Unit>(); val lines = Channel<Event>(8)
-                    platform.openControl(s.pc.host, s.pc.port, { ready.complete(Unit) }, { line ->
-                        runCatching { ControlJson.decode(line) }.onSuccess { lines.trySend(Event.Line(it)) }
-                    }, { lines.trySend(Event.Closed("unreachable")); ready.completeExceptionally(PairError("unreachable")) },
-                        { ready.completeExceptionally(PairError("unreachable")) })
-                    try {
-                        withTimeout(1800) {
-                            ready.await(); platform.sendControl(ControlJson.encode(mapOf("type" to "disconnect", "clientId" to s.clientId, "token" to s.token)))
-                            val reply = next(lines)
-                            released = reply["type"] == "disconnected" || reply["reason"] == "not_owner"
-                        }
-                    } catch (e: CancellationException) { if (e !is TimeoutCancellationException) throw e }
-                    catch (_: Exception) { } finally { lines.close(); platform.closeControl() }
+                try {
+                    previousConnection?.cancelAndJoin()
+                    if (abandoned != null && notifyRelease(abandoned, events)) pendingReleases.remove(abandoned)
+                } finally {
+                    withContext(NonCancellable) { previousConnection?.cancelAndJoin() }
+                    events?.close(); platform.closeControl(); intentionalRelease = false
                 }
-                if (released) clearLocal("已断开连接")
-                else update { it.copy(phase = ConnectionPhase.RECONNECTING, message = "未能通知 PC，原占用仍保留；请重试断开或在 PC 上手动断开") }
             }
         }
     }
-    private fun clearLocal(message: String) {
-        stopCapture(); platform.closeAudio(); platform.closeControl(); session?.key?.fill(0); session = null
+    private suspend fun notifyRelease(owner: AbandonedOwner, existing: Channel<Event>? = null): Boolean {
+        val lines = existing ?: Channel(8)
+        val deadline = platform.monotonicMicros() + 200000
+        return try {
+            withTimeoutOrNull(200) {
+                if (existing == null) {
+                    val ready = CompletableDeferred<Unit>()
+                    platform.openControl(owner.pc.host, owner.pc.port, { ready.complete(Unit) }, { line ->
+                        runCatching { ControlJson.decode(line) }.onSuccess { lines.trySend(Event.Line(it)) }
+                    }, { ready.completeExceptionally(PairError("unreachable")); lines.trySend(Event.Closed("unreachable")) },
+                        { ready.completeExceptionally(PairError("unreachable")); lines.trySend(Event.Closed("unreachable")) })
+                    ready.await()
+                }
+                platform.sendControl(ControlJson.encode(mapOf("type" to "disconnect", "clientId" to owner.clientId, "token" to owner.token)))
+                while (true) {
+                    val reply = next(lines)
+                    if (reply["type"] == "disconnected") {
+                        reply["closeId"]?.let { platform.finishControl(ControlJson.encode(mapOf("type" to "disconnect_ack", "closeId" to it)),
+                            ((deadline - platform.monotonicMicros()) / 1000).toInt().coerceIn(1, 200)) }
+                        return@withTimeoutOrNull true
+                    }
+                    if (reply["type"] == "error" && reply["reason"] == "not_owner") return@withTimeoutOrNull true
+                }
+                @Suppress("UNREACHABLE_CODE") false
+            } ?: false
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { false }
+        finally { lines.close(); platform.closeControl() }
+    }
+    private fun clearLocal(message: String, closeControl: Boolean = true) {
+        val old = session; session = null; activeEvents = null
         mutableState.value = MicState(message = message, muted = muted, noiseSuppression = options.noise,
             echoCancellation = options.echo, deskNoiseSuppression = options.desk, inputGainDb = inputGainDb)
+        stopCapture(); platform.stopDiscovery(); platform.closeAudio(); if (closeControl) platform.closeControl()
+        old?.key?.fill(0); clock = ClockSync(); referenceRequested = false; referencePaused = false
+        referenceFailure = ""; referenceWaitDetail = ""; referenceRetryAt = 0L
     }
     fun close() {
         enhancer?.close(); enhancer = null; scope.cancel(); platform.stopDiscovery(); platform.stopAudio(); platform.closeAudio(); platform.closeControl()

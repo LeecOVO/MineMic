@@ -1,15 +1,18 @@
 #include "minemic_apm.h"
 #include "api/audio/audio_processing.h"
 #include "rnnoise.h"
+#include "reference_resampler.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
 #include <new>
+#include <memory>
 
 namespace {
 struct Processor {
     rtc::scoped_refptr<webrtc::AudioProcessing> echo, noise;
+    std::unique_ptr<ReferenceResampler> reference;
     const webrtc::StreamConfig mono{48000, 1}, stereo{48000, 2};
     bool desk = false;
     DenoiseState* neural = nullptr;
@@ -37,7 +40,24 @@ template<size_t N> std::array<int16_t, N> decode(const uint8_t* pcm) {
 }
 extern "C" void* mm_apm_create() { try { return new Processor(); } catch (...) { return nullptr; } }
 extern "C" void mm_apm_destroy(void* handle) { delete static_cast<Processor*>(handle); }
-extern "C" void mm_apm_reset_echo(void* handle) { if (handle) static_cast<Processor*>(handle)->echo = nullptr; }
+extern "C" void mm_apm_reset_echo(void* handle) {
+    if (handle) { auto& p = *static_cast<Processor*>(handle); p.echo = nullptr; p.reference.reset(); }
+}
+extern "C" int mm_apm_buffer_reference(void* handle, const uint8_t* pcm, int valid) {
+    if (!handle || !pcm) return -1;
+    try {
+        auto& p = *static_cast<Processor*>(handle);
+        if (!p.reference) p.reference = std::make_unique<ReferenceResampler>();
+        return p.reference->push(pcm, valid != 0) ? 0 : -2;
+    } catch (...) { return -3; }
+}
+extern "C" int mm_apm_read_reference(void* handle, double ratio, uint8_t* pcm) {
+    if (!handle || !pcm) return -1;
+    try {
+        auto& p = *static_cast<Processor*>(handle);
+        return p.reference ? p.reference->read(ratio, pcm) : 1;
+    } catch (...) { return -3; }
+}
 extern "C" void mm_apm_set_desk_noise(void* handle, int enabled) {
     if (!handle) return;
     auto& p = *static_cast<Processor*>(handle);

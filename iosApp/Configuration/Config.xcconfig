@@ -1,6 +1,9 @@
 TEAM_ID=
 OTHER_LDFLAGS = $(inherited) -lc++
 
+// The shared Kotlin framework currently supports Apple Silicon simulators only.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64
+
 PRODUCT_NAME=MineMic
 PRODUCT_BUNDLE_IDENTIFIER=com.aiaixyz.minemic.MineMic$(TEAM_ID)
 

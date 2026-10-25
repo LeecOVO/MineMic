@@ -25,4 +25,10 @@ class MicForegroundService : Service() {
         return START_NOT_STICKY
     }
     override fun onBind(intent: Intent?) = null
+    override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE)
+        else { @Suppress("DEPRECATION") stopForeground(true) }
+        getSystemService(NotificationManager::class.java).cancel(1)
+        super.onDestroy()
+    }
 }

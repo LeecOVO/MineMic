@@ -139,7 +139,10 @@ def main(target):
         script='create "'+combined.as_posix()+'"\n'+''.join('addmod "'+p.as_posix()+'"\n' for p in [obj]+rnnoise_objects)+''.join('addlib "'+p.as_posix()+'"\n' for p in libraries)+'save\nend\n'
         run([ar,'-M'],input=script,text=True)
     else:
-        run(['xcrun','libtool','-static','-o',combined,obj]+rnnoise_objects+libraries)
+        # Abseil includes platform-specific translation units that are empty on
+        # Apple targets. Keep them in the archive without warning about missing
+        # global symbols; all other libtool diagnostics remain enabled.
+        run(['xcrun','libtool','-static','-no_warning_for_no_symbols','-o',combined,obj]+rnnoise_objects+libraries)
     (output/'provenance.json').write_text(json.dumps({'source':APM,'sha256':FILES[0][2],'abseil':ABSL,'rnnoise':RNNOISE,'rnnoise_sha256':FILES[3][2],'target':target},indent=2)+'\n')
     print(combined)
 

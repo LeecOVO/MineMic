@@ -22,6 +22,9 @@ class PcInteropTest {
         @Volatile private var key = ByteArray(16)
         val validReferences = AtomicInteger()
         val clockReplies = AtomicInteger()
+        val audioConnections = AtomicInteger()
+        val sentAudio = AtomicInteger()
+        @Volatile var audioError: ((String) -> Unit)? = null
         override fun monotonicMicros() = System.nanoTime() / 1000
         override fun deviceName() = "Kotlin integration test"
         override fun randomBytes(count: Int) = ByteArray(count).also { SecureRandom().nextBytes(it) }
@@ -32,7 +35,7 @@ class PcInteropTest {
             closeControl(); val attempt = epoch
             Thread {
                 try {
-                    val socket = Socket(host, port); tcp = socket; onReady()
+                    val socket = Socket(host, port).apply { tcpNoDelay = true }; tcp = socket; onReady()
                     val reader = socket.getInputStream().bufferedReader()
                     while (epoch == attempt) {
                         val line = reader.readLine() ?: break
@@ -47,8 +50,9 @@ class PcInteropTest {
         }
         override fun sendControl(line: String) { tcp?.getOutputStream()?.write((line + "\n").toByteArray()) }
         override fun closeControl() { epoch++; runCatching { tcp?.close() }; tcp = null }
-        override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit) {
+        override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit, onError: (String) -> Unit) {
             closeAudio(); val socket = DatagramSocket().apply { connect(InetAddress.getByName(host), port) }; udp = socket
+            audioError = onError; audioConnections.incrementAndGet()
             Thread {
                 val storage = ByteArray(1201)
                 try { while (!socket.isClosed) {
@@ -64,8 +68,8 @@ class PcInteropTest {
                 } } catch (_: SocketException) { }
             }.apply { isDaemon = true; start() }
         }
-        override fun sendAudio(bytes: ByteArray) { udp?.send(DatagramPacket(bytes, bytes.size)) }
-        override fun closeAudio() { udp?.close(); udp = null }
+        override fun sendAudio(bytes: ByteArray) { udp?.let { it.send(DatagramPacket(bytes, bytes.size)); sentAudio.incrementAndGet() } }
+        override fun closeAudio() { audioError = null; udp?.close(); udp = null }
         override fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit) {
             val active = AtomicBoolean(true); capture.set(false); capture = active
             onState(true, "capturing")
@@ -74,6 +78,24 @@ class PcInteropTest {
         override fun stopAudio() { capture.set(false) }
     }
     private suspend fun waitFor(condition: () -> Boolean) { withTimeout(9000) { while (!condition()) delay(15) } }
+    @Test fun realPcWaitingDetailReachesPhoneWithoutStoppingMicrophoneOrReconnecting() = runBlocking {
+        val path = System.getenv("MINEMIC_PC_TEST_SERVER")
+        assumeTrue("Set MINEMIC_PC_TEST_SERVER to run the real C++ fixture", !path.isNullOrEmpty())
+        val process = ProcessBuilder(path, "--serve-reference-waiting").redirectError(ProcessBuilder.Redirect.INHERIT).start()
+        val address = process.inputStream.bufferedReader().readLine().split(' ')
+        val native = Platform(address[0].toInt()); val phone = MicController(native)
+        try {
+            phone.setEchoCancellation(true); phone.connect(address[1], "")
+            waitFor { phone.state.value.enhancementMessage.contains("Test speakers") }
+            assertTrue(phone.state.value.enhancementMessage.contains("尚未采集到播放数据"))
+            val before = native.sentAudio.get(); delay(1300)
+            assertTrue(native.sentAudio.get() > before + 60, "waiting metadata must not stop normal microphone upload")
+            assertEquals(1, native.audioConnections.get(), "waiting metadata must not initiate reconnect")
+            assertEquals(0, native.validReferences.get())
+            assertEquals(ConnectionPhase.CONNECTED, phone.state.value.phase)
+            assertTrue(phone.state.value.recording && phone.state.value.ownsPc)
+        } finally { phone.close(); process.destroy(); process.waitFor() }
+    }
     @Test fun realPcPairingOwnershipResumeAndDisconnect() = runBlocking {
         val path = System.getenv("MINEMIC_PC_TEST_SERVER")
         assumeTrue("Set MINEMIC_PC_TEST_SERVER to run the real C++ fixture", !path.isNullOrEmpty())
@@ -121,5 +143,38 @@ class PcInteropTest {
             assertTrue(phone.state.value.recording)
             phone.disconnect(); waitFor { !phone.state.value.ownsPc }
         } finally { phone.close(); process.destroy(); process.waitFor() }
+    }
+    @Test fun udpFailureResumesSameOwnerAndRestoresReferenceWithoutRotatingCode() = runBlocking {
+        val path = System.getenv("MINEMIC_PC_TEST_SERVER")
+        assumeTrue("Set MINEMIC_PC_TEST_SERVER to run the real C++ fixture", !path.isNullOrEmpty())
+        val process = ProcessBuilder(path, "--serve-reference").redirectError(ProcessBuilder.Redirect.INHERIT).start()
+        val address = process.inputStream.bufferedReader().readLine().split(' ')
+        val native = Platform(address[0].toInt()); val otherNative = Platform(address[0].toInt())
+        val phone = MicController(native); val other = MicController(otherNative)
+        try {
+            phone.setEchoCancellation(true); phone.connect(address[1], "")
+            waitFor { phone.state.value.recording && native.validReferences.get() >= 10 }
+            val oldFailure = assertNotNull(native.audioError)
+            val before = native.validReferences.get()
+            // The TCP heartbeat is still healthy; an audio receive/send failure
+            // must independently initiate authenticated resume, never release.
+            assertFalse(assertNotNull(native.tcp).isClosed)
+            native.udp?.close(); oldFailure("injected UDP receive failure")
+            waitFor { phone.state.value.phase == ConnectionPhase.RECONNECTING }
+            assertTrue(phone.state.value.ownsPc)
+            assertTrue(phone.state.value.message.contains("音频通道"))
+            other.connect(address[1], "")
+            waitFor { other.state.value.phase == ConnectionPhase.ERROR }
+            assertTrue(other.state.value.message.contains("另一台手机"))
+            waitFor { native.audioConnections.get() == 2 && phone.state.value.recording && native.validReferences.get() >= before + 20 }
+            assertTrue(phone.state.value.ownsPc)
+            oldFailure("late completion from old UDP socket")
+            delay(300)
+            assertEquals(2, native.audioConnections.get(), "a stale callback must not close the resumed session")
+            assertEquals(ConnectionPhase.CONNECTED, phone.state.value.phase)
+            phone.disconnect(); waitFor { !phone.state.value.ownsPc }
+            other.connect(address[1], ""); waitFor { other.state.value.recording }
+            assertTrue(other.state.value.ownsPc, "UDP recovery and disconnect must preserve the pairing code")
+        } finally { phone.close(); other.close(); process.destroy(); process.waitFor() }
     }
 }

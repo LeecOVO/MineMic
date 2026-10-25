@@ -7,56 +7,108 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DC906200E85F51DB81A31BC0 /* MineMicLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 31A6FAEA41DF5BA1A864AFC2; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		DC906200E85F51DB81A31BC0 /* MineMicLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 31A6FAEA41DF5BA1A864AFC2 /* MineMicLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		4B2D63E156B55F7799C12FEF /* Embed App Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (DC906200E85F51DB81A31BC0, ); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXContainerItemProxy section */
-		4ED99AB0D5B05380B53BFD7B = {isa = PBXContainerItemProxy; containerPortal = 2F231A8ECE14136C5DCA5A17; proxyType = 1; remoteGlobalIDString = 9974F142FD0753D083249A5C; remoteInfo = MineMicLiveActivity; };
+		4ED99AB0D5B05380B53BFD7B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2F231A8ECE14136C5DCA5A17 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9974F142FD0753D083249A5C;
+			remoteInfo = MineMicLiveActivity;
+		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXTargetDependency section */
-		B1EF193E66285E1E8768C0FB = {isa = PBXTargetDependency; target = 9974F142FD0753D083249A5C; targetProxy = 4ED99AB0D5B05380B53BFD7B; };
-/* End PBXTargetDependency section */
+/* Begin PBXCopyFilesBuildPhase section */
+		4B2D63E156B55F7799C12FEF /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				DC906200E85F51DB81A31BC0 /* MineMicLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		4B522808A2381958042730B6 /* MineMic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MineMic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		31A6FAEA41DF5BA1A864AFC2 /* MineMicLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MineMicLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B522808A2381958042730B6 /* MineMic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MineMic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		E91F5303EE5D7DE6B14E8AA6 /* Exceptions for "iosApp" folder in "iosApp" target */ = {
+		E91F5303EE5D7DE6B14E8AA6 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 9BEDFBAD12E7F0BE8D7E897C /* iosApp */;
 		};
-		F51EB95A37ED54D4872D833C = {isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Info.plist, ); target = 9974F142FD0753D083249A5C; };
+		F51EB95A37ED54D4872D833C /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 9974F142FD0753D083249A5C /* MineMicLiveActivity */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		1C5FDFC05F6B5BB0A1B8221C /* LiveActivityShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LiveActivityShared;
+			sourceTree = "<group>";
+		};
 		9285457AE3D01144B189DC17 /* iosApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				E91F5303EE5D7DE6B14E8AA6 /* Exceptions for "iosApp" folder in "iosApp" target */,
+				E91F5303EE5D7DE6B14E8AA6 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
 			);
 			path = iosApp;
 			sourceTree = "<group>";
 		};
+		B4B35B2B1E5D5C7A9A4ACB07 /* MineMicLiveActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F51EB95A37ED54D4872D833C /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = MineMicLiveActivity;
+			sourceTree = "<group>";
+		};
 		F090210255E270AFD5F56052 /* Configuration */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
 			path = Configuration;
 			sourceTree = "<group>";
 		};
-		B4B35B2B1E5D5C7A9A4ACB07 /* MineMicLiveActivity */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (F51EB95A37ED54D4872D833C, ); path = MineMicLiveActivity; sourceTree = "<group>"; };
-		1C5FDFC05F6B5BB0A1B8221C /* LiveActivityShared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = LiveActivityShared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		8508A622AEAA5364B649CA19 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E93E11B93F43EA8EF0FC6A8A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -64,7 +116,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8508A622AEAA5364B649CA19 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -91,6 +142,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		9974F142FD0753D083249A5C /* MineMicLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B9DA65687103592281A46166 /* Build configuration list for PBXNativeTarget "MineMicLiveActivity" */;
+			buildPhases = (
+				D2374BAC1D445989B08E62DF /* Sources */,
+				8508A622AEAA5364B649CA19 /* Frameworks */,
+				7670C9A3516A5FCE926CC4E4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B4B35B2B1E5D5C7A9A4ACB07 /* MineMicLiveActivity */,
+				1C5FDFC05F6B5BB0A1B8221C /* LiveActivityShared */,
+			);
+			name = MineMicLiveActivity;
+			productName = MineMicLiveActivity;
+			productReference = 31A6FAEA41DF5BA1A864AFC2 /* MineMicLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		9BEDFBAD12E7F0BE8D7E897C /* iosApp */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A1A3D1BABA1ADB22EF6422BC /* Build configuration list for PBXNativeTarget "iosApp" */;
@@ -99,12 +171,12 @@
 				DAB057C74F4A23D593F3B70F /* Sources */,
 				E93E11B93F43EA8EF0FC6A8A /* Frameworks */,
 				CE42C2BCBB6FD023AED2CB57 /* Resources */,
-				4B2D63E156B55F7799C12FEF /* Embed App Extensions */,
+				4B2D63E156B55F7799C12FEF /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				B1EF193E66285E1E8768C0FB /* MineMicLiveActivity */,
+				B1EF193E66285E1E8768C0FB /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				9285457AE3D01144B189DC17 /* iosApp */,
@@ -117,7 +189,6 @@
 			productReference = 4B522808A2381958042730B6 /* MineMic.app */;
 			productType = "com.apple.product-type.application";
 		};
-		9974F142FD0753D083249A5C /* MineMicLiveActivity */ = {isa = PBXNativeTarget; buildConfigurationList = B9DA65687103592281A46166; buildPhases = (D2374BAC1D445989B08E62DF, 8508A622AEAA5364B649CA19, 7670C9A3516A5FCE926CC4E4, ); buildRules = (); dependencies = (); fileSystemSynchronizedGroups = (B4B35B2B1E5D5C7A9A4ACB07, 1C5FDFC05F6B5BB0A1B8221C, ); name = MineMicLiveActivity; productName = MineMicLiveActivity; productReference = 31A6FAEA41DF5BA1A864AFC2; productType = "com.apple.product-type.app-extension"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -126,7 +197,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1620;
-				LastUpgradeCheck = 1620;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					9BEDFBAD12E7F0BE8D7E897C = {
 						CreatedOnToolsVersion = 16.2;
@@ -154,6 +225,13 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		7670C9A3516A5FCE926CC4E4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CE42C2BCBB6FD023AED2CB57 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -161,7 +239,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		7670C9A3516A5FCE926CC4E4 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -187,6 +264,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		D2374BAC1D445989B08E62DF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DAB057C74F4A23D593F3B70F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -194,10 +278,103 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D2374BAC1D445989B08E62DF = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		B1EF193E66285E1E8768C0FB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9974F142FD0753D083249A5C /* MineMicLiveActivity */;
+			targetProxy = 4ED99AB0D5B05380B53BFD7B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		03D05AE1BA1F59C686679881 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = F090210255E270AFD5F56052 /* Configuration */;
+			baseConfigurationReferenceRelativePath = Config.xcconfig;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "${TEAM_ID}";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MineMicLiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MineMic;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.MineMic$(TEAM_ID).LiveActivity";
+				PRODUCT_NAME = MineMicLiveActivity;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		4229566D0825CC39FCFE2EB3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = F090210255E270AFD5F56052 /* Configuration */;
+			baseConfigurationReferenceRelativePath = Config.xcconfig;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		5660AB72F0CABC8C36B080C4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = F090210255E270AFD5F56052 /* Configuration */;
@@ -258,73 +435,69 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
 		};
-		4229566D0825CC39FCFE2EB3 /* Release */ = {
+		5A79C5977B3851B8B8C6A96C /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = F090210255E270AFD5F56052 /* Configuration */;
 			baseConfigurationReferenceRelativePath = Config.xcconfig;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "${TEAM_ID}";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MineMicLiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MineMic;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
-				SDKROOT = iphoneos;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				VALIDATE_PRODUCT = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.MineMic$(TEAM_ID).LiveActivity";
+				PRODUCT_NAME = MineMicLiveActivity;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		60F105AE67ED84C088A0CE14 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
+				DEVELOPMENT_TEAM = "${TEAM_ID}";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iosApp/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
 		C71875FF6C5D1AFA59CBF29D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -349,80 +522,6 @@
 			};
 			name = Debug;
 		};
-		60F105AE67ED84C088A0CE14 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
-				DEVELOPMENT_TEAM = "${TEAM_ID}";
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = iosApp/Info.plist;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		03D05AE1BA1F59C686679881 /* Debug */ = {
-            isa = XCBuildConfiguration;
-            baseConfigurationReferenceAnchor = F090210255E270AFD5F56052;
-            baseConfigurationReferenceRelativePath = Config.xcconfig;
-            buildSettings = {
-                APPLICATION_EXTENSION_API_ONLY = YES;
-                CODE_SIGN_STYLE = Automatic;
-                DEVELOPMENT_TEAM = "${TEAM_ID}";
-                GENERATE_INFOPLIST_FILE = YES;
-                INFOPLIST_FILE = MineMicLiveActivity/Info.plist;
-                INFOPLIST_KEY_CFBundleDisplayName = MineMic;
-                IPHONEOS_DEPLOYMENT_TARGET = 18.2;
-                LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
-                PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.MineMic$(TEAM_ID).LiveActivity";
-                PRODUCT_NAME = MineMicLiveActivity;
-                SKIP_INSTALL = YES;
-                SWIFT_EMIT_LOC_STRINGS = YES;
-                SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-                SWIFT_VERSION = 5.0;
-                TARGETED_DEVICE_FAMILY = "1,2";
-            };
-            name = Debug;
-        };
-		5A79C5977B3851B8B8C6A96C /* Release */ = {
-            isa = XCBuildConfiguration;
-            baseConfigurationReferenceAnchor = F090210255E270AFD5F56052;
-            baseConfigurationReferenceRelativePath = Config.xcconfig;
-            buildSettings = {
-                APPLICATION_EXTENSION_API_ONLY = YES;
-                CODE_SIGN_STYLE = Automatic;
-                DEVELOPMENT_TEAM = "${TEAM_ID}";
-                GENERATE_INFOPLIST_FILE = YES;
-                INFOPLIST_FILE = MineMicLiveActivity/Info.plist;
-                INFOPLIST_KEY_CFBundleDisplayName = MineMic;
-                IPHONEOS_DEPLOYMENT_TARGET = 18.2;
-                LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
-                PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.MineMic$(TEAM_ID).LiveActivity";
-                PRODUCT_NAME = MineMicLiveActivity;
-                SKIP_INSTALL = YES;
-                SWIFT_EMIT_LOC_STRINGS = YES;
-                SWIFT_OPTIMIZATION_LEVEL = "-O";
-                SWIFT_VERSION = 5.0;
-                TARGETED_DEVICE_FAMILY = "1,2";
-            };
-            name = Release;
-        };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -444,7 +543,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B9DA65687103592281A46166 = {isa = XCConfigurationList; buildConfigurations = (03D05AE1BA1F59C686679881, 5A79C5977B3851B8B8C6A96C, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		B9DA65687103592281A46166 /* Build configuration list for PBXNativeTarget "MineMicLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				03D05AE1BA1F59C686679881 /* Debug */,
+				5A79C5977B3851B8B8C6A96C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 	};
 	rootObject = 2F231A8ECE14136C5DCA5A17 /* Project object */;

@@ -3,7 +3,8 @@ project(MineMicAPM LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 get_filename_component(MINEMIC_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${MINEMIC_ROOT}/scripts/build-apm.py" "${CMAKE_CURRENT_LIST_DIR}/src/minemic_apm.cpp" "${CMAKE_CURRENT_LIST_DIR}/include/minemic_apm.h")
+    "${MINEMIC_ROOT}/scripts/build-apm.py" "${CMAKE_CURRENT_LIST_DIR}/src/minemic_apm.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/reference_resampler.h" "${CMAKE_CURRENT_LIST_DIR}/include/minemic_apm.h")
 find_program(PYTHON_EXECUTABLE NAMES python3 python REQUIRED)
 execute_process(COMMAND "${CMAKE_COMMAND}" -E env "ANDROID_NDK_HOME=${ANDROID_NDK}" "${PYTHON_EXECUTABLE}" "${MINEMIC_ROOT}/scripts/build-apm.py" --target "android-${ANDROID_ABI}"
     RESULT_VARIABLE status COMMAND_ECHO STDOUT)

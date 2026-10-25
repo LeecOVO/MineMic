@@ -32,7 +32,7 @@ class AudioBurstTest {
             )))
         }
         override fun closeControl() {}
-        override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit) {}
+        override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit, onError: (String) -> Unit) {}
         override fun sendAudio(bytes: ByteArray) { sent += bytes }
         override fun closeAudio() {}
         override fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit) {
