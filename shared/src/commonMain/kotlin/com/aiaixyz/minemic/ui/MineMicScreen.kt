@@ -45,11 +45,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aiaixyz.minemic.AppVersion
@@ -462,7 +464,8 @@ private fun EnhancementPanel(
     }.joinToString(" · ").ifEmpty { "均已关闭" }
     DisclosureCard("声音处理", selection, expanded,
         onToggle = { onInteraction(); expanded = !expanded },
-        icon = { ToolIcon(Glyph.Noise, MaterialTheme.colorScheme.primary, Modifier.size(20.dp)) }) {
+        icon = { ToolIcon(Glyph.Noise, MaterialTheme.colorScheme.primary, Modifier.size(20.dp)) },
+        footer = if (state.echoCancellation) ({ ProcessingStatusPanel(state) }) else null) {
         Column {
             GainControl(gain, enabled, onGain)
             HorizontalDivider(Modifier.padding(top = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -487,29 +490,85 @@ private fun EnhancementPanel(
             EnhancementRow("回声抑制", "减少电脑外放带来的回声", Glyph.Echo,
                 state.echoCancellation, enabled, onEcho)
         }
-        val requested = state.noiseSuppression || state.echoCancellation || gain > 0
-        val processingActive = state.phase == ConnectionPhase.CONNECTED && state.recording
-        val waitingMessage = when {
-            !state.ownsPc -> "待连接，所选设置将在连接后应用"
-            state.phase == ConnectionPhase.RECONNECTING -> "待连接恢复，所选设置将在恢复后应用"
-            state.phase == ConnectionPhase.DISCONNECTING -> "音频已停止，正在断开连接"
-            else -> "待麦克风恢复，所选设置将在恢复后应用"
-        }
-        Surface(shape = MaterialTheme.shapes.small,
-            color = if (requested) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent) {
-            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ToolIcon(Glyph.Info, MaterialTheme.colorScheme.onSurfaceVariant, Modifier.size(16.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    if (!processingActive) Text(waitingMessage,
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                    Text(if (processingActive) "当前处理状态" else "上次处理状态", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(state.enhancementMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (processingActive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+    }
+}
+
+@Composable
+private fun ProcessingStatusPanel(state: MicState) {
+    val colors = MaterialTheme.colorScheme
+    val selected = state.noiseSuppression || state.echoCancellation || state.inputGainDb > 0f
+    val running = state.phase == ConnectionPhase.CONNECTED && state.recording
+    val phase = when {
+        state.phase == ConnectionPhase.RECONNECTING -> "重连中"
+        !state.ownsPc -> "待连接"
+        !state.recording -> "已暂停"
+        !selected -> "未启用"
+        else -> "运行中"
+    }
+    val stats = state.processingStatistics
+    val measured = running && state.echoCancellation && stats.available
+    var showDetail by remember { mutableStateOf(false) }
+    Surface(shape = RoundedCornerShape(14.dp), color = colors.surfaceContainerLow) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).background(if (running && selected) colors.primary else colors.outline, CircleShape))
+                Spacer(Modifier.width(7.dp))
+                Text("处理监测", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f), maxLines = 1)
+                Text(phase, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
+                IconButton(onClick = { showDetail = true }, modifier = Modifier.size(28.dp).semantics { contentDescription = "查看音频处理详情" }) {
+                    ToolIcon(Glyph.Info, colors.onSurfaceVariant, Modifier.size(15.dp))
                 }
             }
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val compact = maxWidth / LocalDensity.current.fontScale < 260.dp
+                val metrics = listOf(
+                    Triple("参考流", if (measured) "${stats.referenceFramesPerSecond}" else "—", "帧/秒"),
+                    Triple("回声处理", if (measured) "${stats.echoPercent}" else "—", "%"),
+                    Triple("原声回退", if (measured) "${stats.fallbackFramesPerSecond}" else "—", "帧/秒"))
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (compact) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        metrics.forEach { (label, value, unit) ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                                    color = colors.onSurfaceVariant, maxLines = 1)
+                                Text(value, Modifier.widthIn(min = 50.dp), fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(unit, Modifier.width(42.dp), style = MaterialTheme.typography.labelSmall,
+                                    color = colors.onSurfaceVariant, maxLines = 1)
+                            }
+                        }
+                    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        metrics.forEach { (label, value, unit) -> ProcessingMetric(label, value, unit, Modifier.weight(1f)) }
+                    }
+                    HorizontalDivider(color = colors.outlineVariant.copy(alpha = .6f))
+                    val realignments = "重新对齐 ${if (running) stats.realignments else 0} 次"
+                    val timeouts = "处理超时 ${if (running) stats.timeouts else 0} 次"
+                    if (compact) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(realignments, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
+                        Text(timeouts, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
+                    } else Text("$realignments  ·  $timeouts", style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+    if (showDetail) AlertDialog(onDismissRequest = { showDetail = false },
+        title = { Text("音频处理详情") },
+        text = { Text("参考流表示收到的完整立体声参考帧；回声处理表示最近一秒成功使用回声抑制的帧占比，并非消除效果评分。参考暂不可用时继续传输原声。\n\n${state.enhancementMessage}") },
+        confirmButton = { TextButton(onClick = { showDetail = false }) { Text("知道了") } })
+}
+
+@Composable
+private fun ProcessingMetric(label: String, value: String, unit: String, modifier: Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(value, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleMedium, maxLines = 1, modifier = Modifier.widthIn(min = 42.dp))
+            Text(unit, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
 }

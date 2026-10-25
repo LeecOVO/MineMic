@@ -194,7 +194,8 @@ internal fun SlidingChoice(
 @Composable
 internal fun DisclosureCard(
     title: String, summary: String, expanded: Boolean, onToggle: () -> Unit,
-    icon: @Composable () -> Unit, content: @Composable ColumnScope.() -> Unit,
+    icon: @Composable () -> Unit, footer: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     val source = remember { MutableInteractionSource() }
     val angle by animateFloatAsState(if (expanded) 180f else 0f, tween(240, easing = FastOutSlowInEasing))
@@ -223,6 +224,7 @@ internal fun DisclosureCard(
             Reveal(expanded) {
                 Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 18.dp), content = content)
             }
+            footer?.let { Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), content = it) }
         }
     }
 }

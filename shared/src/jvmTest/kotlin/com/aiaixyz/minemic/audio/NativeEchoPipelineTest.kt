@@ -13,10 +13,11 @@ import kotlin.math.sin
 import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import kotlin.test.assertEquals
 
 // Reuse the mobile JNI bridge in an opt-in host fixture. Desktop previews still
 // have no native processor; this class belongs only to JVM tests.
-private object NativeApm {
+internal object NativeApm {
     external fun create(): Long
     external fun destroy(handle: Long)
     external fun render(handle: Long, pcm: ByteArray): Boolean
@@ -52,14 +53,62 @@ class NativeEchoPipelineTest {
     @Test fun adaptiveReferenceHandlesSlowIndependentClock() = exercise(dropEvery = 0, adaptive = true, ppm = -200, blocks = 6000)
     @Test fun adaptiveReferencePreservesSyntheticNearEndDuringDoubleTalk() = exercise(dropEvery = 43, adaptive = true, ppm = 200, blocks = 3000, doubleTalk = true)
     @Test fun baselinePreservesSyntheticNearEndDuringDoubleTalk() = exercise(dropEvery = 43, blocks = 3000, doubleTalk = true)
+    @Test fun delayedNetworkAndPeriodicClockCorrectionsKeepEchoContinuous() = exercise(
+        dropEvery = 0, adaptive = true, blocks = 1200, batchSize = 1,
+        captureHoldMillis = 40, networkDelayMillis = 20, clockCorrections = true)
+    @Test fun boundedCaptureLookaheadCoversFortyMillisecondReferenceDelivery() = exercise(
+        dropEvery = 0, adaptive = true, blocks = 1200, batchSize = 1,
+        captureHoldMillis = 60, networkDelayMillis = 40, clockCorrections = true)
+    @Test fun timedNativePipelineBackfillsPeriodicReferenceBursts() = exercise(
+        dropEvery = 0, adaptive = true, blocks = 1200, batchSize = 1,
+        captureHoldMillis = 100, networkDelayMillis = 40, timed = true, lateBursts = true)
+    @Test fun timedNativePipelineKeepsVoicedDoubleTalkThroughReferenceBursts() = exercise(
+        dropEvery = 0, adaptive = true, blocks = 3000, batchSize = 1, doubleTalk = true,
+        captureHoldMillis = 100, networkDelayMillis = 40, timed = true, lateBursts = true)
 
-    private fun exercise(dropEvery: Int, adaptive: Boolean = false, ppm: Int = 0, blocks: Int = 1200, doubleTalk: Boolean = false) = runBlocking {
+    @Test fun nativeBackendDelaysMatchPlayoutAlignment() {
+        val library = System.getenv("MINEMIC_APM_TEST_LIBRARY")
+        assumeTrue(!library.isNullOrEmpty()); System.load(library)
+        for ((noise, echo, desk) in listOf(Triple(false, true, false), Triple(true, false, false), Triple(true, false, true))) {
+            val handle = NativeApm.create(); val count = 96000
+            val input = IntArray(count); val output = IntArray(count); var seed = 79
+            for (i in input.indices) { seed = seed*1664525+1013904223; input[i] = (seed shr 17)/8 }
+            try {
+                NativeApm.setDeskNoise(handle, desk)
+                repeat(count/480) { frame ->
+                    if (echo) assertTrue(NativeApm.render(handle, ByteArray(1920)))
+                    val pcm = ByteArray(960); repeat(480) { put(pcm, it*2, input[frame*480+it]) }
+                    val result = NativeApm.process(handle, pcm, noise, echo)!!
+                    repeat(480) { output[frame*480+it] = ((result[2*it].toInt() and 255) or (result[2*it+1].toInt() shl 8)).toShort().toInt() }
+                }
+                val timing = EnhancementTiming()
+                val expected = if (echo) timing.echoDelaySamples else if (desk) timing.deskNoiseDelaySamples else timing.noiseDelaySamples
+                val best = (0..1600).maxBy { lag ->
+                    var sum = 0.0
+                    for (i in 48000 until count-1024 step 8) sum += input[i-lag].toDouble()*output[i]
+                    sum
+                }
+                println("Pinned native DSP delay: noise=$noise echo=$echo desk=$desk expected=$expected measured=$best")
+                if (desk) {
+                    // RNNoise's nonlinear pitch filtering can shift a noise
+                    // correlation peak. Verify its two-frame synthesis timing,
+                    // rather than claiming sample-exact linear phase for it.
+                    assertEquals(expected/480, (best+240)/480, "RNNoise synthesis frame delay changed")
+                } else assertTrue(kotlin.math.abs(best-expected) <= 2,
+                    "native DSP delay changed: expected=$expected, measured=$best")
+            } finally { NativeApm.destroy(handle) }
+        }
+    }
+
+    private fun exercise(dropEvery: Int, adaptive: Boolean = false, ppm: Int = 0, blocks: Int = 1200, doubleTalk: Boolean = false,
+                         batchSize: Int = 10, captureHoldMillis: Int = 0, networkDelayMillis: Int = 0,
+                         clockCorrections: Boolean = false, timed: Boolean = false, lateBursts: Boolean = false) = runBlocking {
         val library = System.getenv("MINEMIC_APM_TEST_LIBRARY")
         assumeTrue("Run tests/native-audio/run-pipeline.sh for real WebRTC pipeline checks", !library.isNullOrEmpty())
         System.load(library)
         val time = AtomicLong(1000000)
         val resets = AtomicInteger()
-        val enhancer = AudioEnhancer(7, key.copyOf(), time::get, ::hmac) {
+        val enhancer = AudioEnhancer(7, key.copyOf(), time::get, ::hmac, timing = if (timed) EnhancementTiming() else null) {
             val handle = NativeApm.create()
             if (handle == 0L) null else object : AudioProcessor {
                 override val supportsReferenceResampling = adaptive
@@ -102,17 +151,19 @@ class NativeEchoPipelineTest {
         fun nearEnd(sample: Int) = if (doubleTalk) near[sample] else 0
         var nextReference = 0
         try {
-            for (batch in 0 until blocks step 10) {
+            for (batch in 0 until blocks step batchSize) {
                 // Both hardware and UDP may arrive in batches. Keep the actual
                 // sample timestamps, and reorder stereo channels in transit.
-                time.set(start + (batch + 9) * 10000L)
-                val due = if (adaptive) (((batch + 9) * rate).toInt() + 1) else batch + 10
+                time.set(start + (batch + batchSize - 1) * 10000L + captureHoldMillis * 1000)
+                val due = if (lateBursts && batch % 52 in 30..37) nextReference
+                    else if (adaptive) (((time.get() - start - networkDelayMillis * 1000) / 10000.0 * rate).toInt() + 1)
+                    else batch + batchSize
                 for (block in nextReference until due)
                     enhancer.offerReference(reference(0, block, start + (block * 10000 / rate).toLong() + offset, left))
                 for (block in due - 1 downTo nextReference) if (dropEvery == 0 || block == 0 || block % dropEvery != 0)
                     enhancer.offerReference(reference(1, block, start + (block * 10000 / rate).toLong() + offset, right))
                 nextReference = due
-                for (block in batch until batch + 10) {
+                for (block in batch until batch + batchSize) {
                     val pcm = ByteArray(960)
                     repeat(480) { i ->
                         val t = block * 480 + i
@@ -124,7 +175,9 @@ class NativeEchoPipelineTest {
                         put(pcm, i * 2, echo + nearEnd(t))
                     }
                     val result = enhancer.enhance(CapturedAudio(pcm, start + block * 10000L),
-                        EnhancementOptions(echo = true), ClockSync.Mapping(offset, time.get(), 1000))
+                        EnhancementOptions(echo = true), ClockSync.Mapping(offset +
+                            if (clockCorrections) (if (block / 100 % 2 == 0) 6000 else -6000) else 0,
+                            time.get(), 1000))
                     if (result.echo) processed++
                     enhanced[block] = result.echo
                     if (block > blocks * 3 / 4) repeat(480) { i ->
@@ -139,11 +192,14 @@ class NativeEchoPipelineTest {
             println("Real WebRTC through authenticated Kotlin pipeline: adaptive=$adaptive, ppm=$ppm, dropEvery=$dropEvery, processed=$processed/$blocks, resets=${resets.get()}, attenuation=$attenuation dB")
             assertTrue(processed > blocks * if (adaptive) .70 else .83, "reference should reach real AEC for most capture frames")
             assertTrue(resets.get() <= 2, "isolated lost UDP channels must not repeatedly destroy the native echo filter")
+            if (clockCorrections) assertTrue(processed > blocks * .98,
+                "network offset corrections must not periodically interrupt a continuous audio clock")
+            if (timed) assertTrue(processed > blocks * .98, "late reference batches must fill output before playout, rather than periodically publish raw echo")
             if (doubleTalk) {
                 // Account for DSP algorithm delay; raw bypass is checked
                 // separately and must not be correlated at an AEC output lag.
                 var correlation = 0.0; var gain = 0.0; var latencySamples = 0
-                for (delay in 0..960) {
+                for (delay in 0..if (timed) 3000 else 960) {
                     var cross = 0.0; var nearPower = 0.0; var outPower = 0.0
                     for (sample in blocks * 3 / 4 * 480 + 48000 until observed.size step 4) if (enhanced[sample / 480]) {
                         val a = near[sample - delay].toDouble(); val b = observed[sample].toDouble()

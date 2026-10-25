@@ -7,6 +7,17 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.*
 
 class AudioBurstTest {
+    @Test fun referenceLookaheadIsBoundedAndDisabledForOrdinaryMicrophoneUse() {
+        assertEquals(0L, referenceLookaheadMicros(1000000, 1000000, false))
+        assertEquals(100000L, referenceLookaheadMicros(1000000, 1000000, true))
+        assertEquals(85000L, referenceLookaheadMicros(1000000, 1015000, true))
+        assertEquals(60000L, referenceLookaheadMicros(1000000, 1040000, true))
+        assertEquals(40000L, referenceLookaheadMicros(1000000, 1060000, true))
+        assertEquals(0L, referenceLookaheadMicros(1000000, 1100000, true))
+        assertEquals(0L, referenceLookaheadMicros(1000000, 1200000, true))
+        assertEquals(0L, referenceLookaheadMicros(0, 1000000, true))
+        assertEquals(0L, referenceLookaheadMicros(1200000, 1000000, true))
+    }
     private class BurstPlatform : PhonePlatform {
         val sent = CopyOnWriteArrayList<ByteArray>()
         val controls = CopyOnWriteArrayList<String>()

@@ -42,8 +42,12 @@ internal class ClockSync {
         val best = samples.minBy { it.roundTripMicros }
         // Do not jump the timeline on an isolated congested sample.
         val previous = mapping
-        mapping = if (previous == null || abs(best.pcMinusPhone - previous.pcMinusPhone) > 10000) best
-                  else best.copy(pcMinusPhone = (previous.pcMinusPhone * 3 + best.pcMinusPhone) / 4)
+        val chosenOffset = if (previous == null || abs(best.pcMinusPhone - previous.pcMinusPhone) > 10000) best.pcMinusPhone
+                           else (previous.pcMinusPhone * 3 + best.pcMinusPhone) / 4
+        // Freshness means the last accepted exchange, not the age of the
+        // lowest-RTT offset sample. Otherwise an active 1 Hz sync can expire
+        // between replies whenever that older sample crosses five seconds.
+        mapping = Mapping(chosenOffset, t4, best.roundTripMicros)
         return true
     }
     fun current(now: Long): Mapping? = mapping?.takeIf { now - it.measuredAt in 0..5000000 }

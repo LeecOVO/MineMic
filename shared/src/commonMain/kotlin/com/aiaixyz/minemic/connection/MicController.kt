@@ -18,6 +18,7 @@ data class MicState(
     val noiseSuppression: Boolean = false, val echoCancellation: Boolean = false,
     val deskNoiseSuppression: Boolean = false, val inputGainDb: Float = 0f,
     val enhancementMessage: String = "增强已关闭",
+    val processingStatistics: ProcessingStatistics = ProcessingStatistics(),
     val recording: Boolean = false, val muted: Boolean = false, val level: Float = 0f,
 )
 
@@ -240,7 +241,11 @@ class MicController(private val platform: PhonePlatform) {
         stopCapture(keepEnhancer = true)
         val s = session ?: return
         val epoch = captureEpoch
-        if (enhancer == null) enhancer = AudioEnhancer(s.id, s.key.copyOf(), platform::monotonicMicros, platform::hmac)
+        if (enhancer == null) enhancer = AudioEnhancer(s.id, s.key.copyOf(), platform::monotonicMicros, platform::hmac,
+            diagnostics = platform::reportAudioDiagnostics,
+            statistics = { value -> scope.launch {
+                if (session === s) update { it.copy(processingStatistics = value) }
+            } }, diagnosticFrame = platform::recordAudioDiagnosticFrame, timing = EnhancementTiming())
         // Native capture may deliver several 10 ms frames in one callback. A 40 ms
         // channel discarded valid iOS batches before this coroutine could run.
         // Keep at most 160 ms; on sustained overload prefer recent speech.
@@ -270,11 +275,20 @@ class MicController(private val platform: PhonePlatform) {
                     update { it.copy(recording = true, message = "手机麦克风正在传输") }
                 }
                 val chosen = options
+                platform.recordAudioDiagnosticFrame("input", frame.capturedAtMicros, frame.pcm)
+                // One bounded lookahead at a fixed capture age lets a remote
+                // render packet arrive before DSP. Do not independently wait
+                // for a new UDP reference inside every 10 ms processing call.
+                val referenceWait = referenceLookaheadMicros(frame.capturedAtMicros,
+                    platform.monotonicMicros(), chosen.echo && s.supportsReference)
+                if (referenceWait > 0) delay((referenceWait + 999) / 1000)
                 val result = if (chosen.noise || chosen.echo) enhancer?.enhance(frame,
                     chosen.copy(echo = chosen.echo && s.supportsReference && referenceRequested),
                     clock.current(platform.monotonicMicros())?.takeIf { platform.monotonicMicros() - frame.capturedAtMicros in -20000L..200000L },
                     referenceWaitDetail) else null
                 val cleaned = if (options == chosen) result?.pcm ?: frame.pcm else frame.pcm
+                platform.recordAudioDiagnosticFrame(if (options == chosen && result?.echo == true) "output-echo" else "output-bypass",
+                    frame.capturedAtMicros, cleaned)
                 val pcm = gain.process(cleaned, inputGainDb)
                 if (capturePaused) continue
                 val now = platform.monotonicMicros()
@@ -429,3 +443,7 @@ class MicController(private val platform: PhonePlatform) {
         else -> "连接失败，请检查 PC 地址、防火墙和局域网连接"
     }
 }
+
+internal fun referenceLookaheadMicros(capturedAt: Long, now: Long, enabled: Boolean): Long =
+    if (!enabled || capturedAt <= 0 || capturedAt > now + 20000) 0
+    else (100000 - (now - capturedAt)).coerceIn(0, 100000)

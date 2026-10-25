@@ -4,11 +4,82 @@ import com.aiaixyz.minemic.connection.CapturedAudio
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.test.*
 
 class AudioEnhancerTest {
+    @Test fun blockedMonitoringCannotDelayAudioDeliveryOrFollowingDspFrames() = runBlocking {
+        val time = AtomicLong(1000000)
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val enhancer = AudioEnhancer(7, key.copyOf(), time::get, ::hmac,
+            statistics = { entered.countDown(); release.await(2, TimeUnit.SECONDS) }) {
+            object : AudioProcessor {
+                override fun render(stereo: ByteArray) = false
+                override fun process(mono: ByteArray, noise: Boolean, echo: Boolean) = ByteArray(960) { 77 }
+                override fun resetEcho() {}
+                override fun close() {}
+            }
+        }
+        suspend fun frame() = enhancer.enhance(CapturedAudio(ByteArray(960), time.get()), EnhancementOptions(noise = true), null)
+        try {
+            assertContentEquals(ByteArray(960) { 77 }, frame().pcm)
+            time.addAndGet(1100000)
+            assertContentEquals(ByteArray(960) { 77 }, frame().pcm)
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            repeat(8) {
+                time.addAndGet(10000)
+                assertContentEquals(ByteArray(960) { 77 }, frame().pcm,
+                    "a blocked statistics callback must not occupy the DSP worker")
+            }
+        } finally { release.countDown(); enhancer.close() }
+    }
+    @Test fun timedOutputBackfillsLateEchoAndRunsNoiseOnceInPlayoutOrder() = timedOutputClockScenario(0)
+    @Test fun positiveReferencePhaseCannotSkipAnOlderUnprocessedVoiceFrame() = timedOutputClockScenario(7000)
+    private fun timedOutputClockScenario(referencePhase: Long) = runBlocking {
+        val time = AtomicLong(1000000)
+        val noiseInputs = mutableListOf<Byte>()
+        val echoInputs = mutableListOf<Byte>()
+        var buffered = 0
+        val enhancer = AudioEnhancer(7, key.copyOf(), time::get, ::hmac,
+            timing = EnhancementTiming(echoDelaySamples = 0, noiseDelaySamples = 0, deskNoiseDelaySamples = 0)) {
+            object : AudioProcessor {
+                override val supportsReferenceResampling = true
+                override fun bufferReference(stereo: ByteArray, valid: Boolean): Boolean { buffered++; return true }
+                override fun readReference(ratio: Double) = if (buffered > 0) {
+                    buffered--; ResampledReference(ByteArray(1920), true)
+                } else null
+                override fun render(stereo: ByteArray) = true
+                override fun process(mono: ByteArray, noise: Boolean, echo: Boolean): ByteArray {
+                    if (echo) echoInputs += mono[0]
+                    if (noise) noiseInputs += mono[0]
+                    return mono
+                }
+                override fun resetEcho() { buffered = 0 }
+                override fun close() {}
+            }
+        }
+        try {
+            var nextReference = 0
+            repeat(40) { index ->
+                val capture = 1000000+index*10000L; time.set(capture+100000)
+                if (index !in 20..22) {
+                    for (render in nextReference..index) for (channel in 0..1)
+                        enhancer.offerReference(reference(channel, 1000000+render*10000L+referencePhase, render.toLong()))
+                    nextReference = index+1
+                }
+                val result = enhancer.enhance(CapturedAudio(ByteArray(960) { (index+1).toByte() }, capture),
+                    EnhancementOptions(noise = true, echo = true), ClockSync.Mapping(0, time.get(), 1000))
+                assertContentEquals(ByteArray(960) { if (index < 4) 0 else (index-3).toByte() }, result.pcm)
+                if (index >= 4) assertTrue(result.echo, "late references must not switch published audio to dry PCM")
+            }
+            assertEquals((1..40).map { it.toByte() }, echoInputs)
+            assertEquals(List(4) { 0.toByte() }+(1..36).map { it.toByte() }, noiseInputs,
+                "NS must consume the chronological playout stream once, not retrain on retrospective AEC captures")
+        } finally { enhancer.close() }
+    }
     private fun now() = System.nanoTime() / 1000
     private val key = ByteArray(16) { it.toByte() }
     private fun hmac(body: ByteArray, secret: ByteArray) = Mac.getInstance("HmacSHA256").run {
@@ -57,7 +128,8 @@ class AudioEnhancerTest {
     }
     @Test fun stereoPairsReorderWithoutMixingAndMissingReferenceBypassesAec() = runBlocking {
         val rendered = AtomicInteger(); val resets = AtomicInteger()
-        val enhancer = AudioEnhancer(7, key, ::now, ::hmac) { object : AudioProcessor {
+        val logicalNow = 1000000L
+        val enhancer = AudioEnhancer(7, key, { logicalNow }, ::hmac) { object : AudioProcessor {
             override fun render(stereo: ByteArray): Boolean {
                 repeat(480) { assertEquals(11, stereo[4*it].toInt()); assertEquals(22, stereo[4*it+2].toInt()) }
                 rendered.incrementAndGet(); return true
@@ -69,13 +141,13 @@ class AudioEnhancerTest {
             override fun close() {}
         } }
         try {
-            val captureTime = now() - 10000
+            val captureTime = logicalNow - 10000
             enhancer.offerReference(reference(1, captureTime)); enhancer.offerReference(reference(0, captureTime))
             enhancer.offerReference(reference(0, captureTime)) // Duplicate must never become a stereo pair.
-            val out = enhancer.enhance(CapturedAudio(ByteArray(960), captureTime), EnhancementOptions(echo = true), ClockSync.Mapping(0, now(), 1000))
+            val out = enhancer.enhance(CapturedAudio(ByteArray(960), captureTime), EnhancementOptions(echo = true), ClockSync.Mapping(0, logicalNow, 1000))
             assertEquals(1, rendered.get()); assertContentEquals(ByteArray(960) { 77 }, out.pcm)
             val raw = ByteArray(960) { 42 }
-            val missing = enhancer.enhance(CapturedAudio(raw, now() + 90000), EnhancementOptions(echo = true), ClockSync.Mapping(0, now(), 1000))
+            val missing = enhancer.enhance(CapturedAudio(raw, logicalNow + 90000), EnhancementOptions(echo = true), ClockSync.Mapping(0, logicalNow, 1000))
             assertSame(raw, missing.pcm); assertEquals(0, resets.get(), "one missing reference must not discard AEC adaptation")
         } finally { enhancer.close() }
     }
@@ -235,6 +307,17 @@ class AudioEnhancerTest {
         clock.sent(2000); assertFalse(clock.receive(2000, 102100, 102000, 2400))
         clock.sent(3000); assertFalse(clock.receive(3000, 104000, 104001, 1000000))
         assertNull(clock.current(6000000))
+    }
+    @Test fun freshClockRepliesKeepTheLowestRttMappingAliveAcrossItsSampleAgeBoundary() {
+        val clock = ClockSync()
+        fun sample(sent: Long, roundTrip: Long) {
+            clock.sent(sent)
+            assertTrue(clock.receive(sent, sent+100000+roundTrip/2, sent+100000+roundTrip/2, sent+roundTrip))
+        }
+        sample(1000000, 100)
+        for (second in 2L..5L) sample(second*1000000, 2000)
+        assertNotNull(clock.current(6100500), "recent accepted replies must keep synchronization valid even while the best RTT sample ages out")
+        assertNull(clock.current(10002001), "synchronization must still expire after five seconds without an accepted reply")
     }
     @Test fun concealedResamplerOutputNeverReplacesMicrophoneAndNoiseRemainsIndependent() = runBlocking {
         for (noise in listOf(false, true)) {

@@ -18,6 +18,7 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
     private var pending = Data()
     private let microphone = IOSMicrophoneSession()
     #if DEBUG
+    private let waveformRecorder = MineMicWaveformRecorder()
     private var diagnosticSent = 0, diagnosticReferences = 0, diagnosticUnexpected = 0
     private var nextDiagnosticAt: UInt64 = 0
     private func traceAudioTransport() {
@@ -140,7 +141,9 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
         #if DEBUG
         self.diagnosticSent = 0; self.diagnosticReferences = 0; self.diagnosticUnexpected = 0; self.nextDiagnosticAt = 0
         #endif
-        let connection = NWConnection(host: .init(host), port: NWEndpoint.Port(rawValue: UInt16(port))!, using: .udp)
+        let parameters = NWParameters.udp
+        parameters.serviceClass = .interactiveVoice
+        let connection = NWConnection(host: .init(host), port: NWEndpoint.Port(rawValue: UInt16(port))!, using: parameters)
         self.audio = connection; self.audioFailure = onError
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, let connection else { return }
@@ -199,7 +202,22 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
                          onError: { _ = onError($0) },
                          onState: { active, message in _ = onState(KotlinBoolean(bool: active), message) })
     }
-    func stopAudio() { microphone.stop() }
+    func stopAudio() {
+        microphone.stop()
+        #if DEBUG
+        waveformRecorder.finish()
+        #endif
+    }
+    func reportAudioDiagnostics(message: String) {
+        #if DEBUG
+        MineMicAudioDiagnostics.record(topic: "processing", message: message)
+        #endif
+    }
+    func recordAudioDiagnosticFrame(kind: String, capturedAtMicros: Int64, pcm: KotlinByteArray) {
+        #if DEBUG
+        waveformRecorder.record(kind: kind, capturedAtMicros: capturedAtMicros, pcm: pcm)
+        #endif
+    }
     func applicationBecameActive() { microphone.becameActive() }
 }
 
@@ -209,7 +227,7 @@ enum MineMicAudioDiagnostics {
     private static let writer = DispatchQueue(label: "MineMic.debug-status", qos: .utility)
     private static var latest: [String: [String: Any]] = [:]
     static func record(topic: String, message: String) {
-        guard ["transport", "reference", "session"].contains(topic) else { return }
+        guard ["transport", "reference", "session", "processing"].contains(topic) else { return }
         let text = String(message.prefix(600))
         let timestamp = Date().timeIntervalSince1970
         writer.async {

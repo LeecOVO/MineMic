@@ -22,4 +22,7 @@ interface PhonePlatform {
     fun closeAudio()
     fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit)
     fun stopAudio()
+    /** Numeric, local diagnostics only. Production adapters may discard them. */
+    fun reportAudioDiagnostics(message: String) {}
+    fun recordAudioDiagnosticFrame(kind: String, capturedAtMicros: Long, pcm: ByteArray) {}
 }
