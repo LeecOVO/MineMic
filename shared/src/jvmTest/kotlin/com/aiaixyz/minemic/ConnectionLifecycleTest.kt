@@ -8,6 +8,11 @@ import kotlin.test.*
 
 class ConnectionLifecycleTest {
     private class Platform : PhonePlatform {
+        private var savedConnection: String? = null
+        override fun loadConnectionState() = savedConnection
+        override fun saveConnectionState(state: String?) { savedConnection = state }
+        private val randomSequence = AtomicInteger(1)
+        private var ownerClient = ""
         @Volatile var instance = "a".repeat(32)
         @Volatile var owner = false
         @Volatile var dropRelease = false
@@ -21,7 +26,7 @@ class ConnectionLifecycleTest {
         val requests = CopyOnWriteArrayList<Map<String, String>>()
         override fun monotonicMicros() = System.nanoTime() / 1000
         override fun deviceName() = "Test phone"
-        override fun randomBytes(count: Int) = ByteArray(count) { 7 }
+        override fun randomBytes(count: Int) = randomSequence.getAndIncrement().let { value -> ByteArray(count) { value.toByte() } }
         override fun hmac(body: ByteArray, key: ByteArray) = ByteArray(32)
         override fun discover(onFound: (LanComputer) -> Unit, onError: (String) -> Unit) = onFound(LanComputer("127.0.0.1", 48721, "Test PC"))
         override fun stopDiscovery() {}
@@ -34,8 +39,11 @@ class ConnectionLifecycleTest {
             when (request["type"]) {
                 "connect", "resume" -> {
                     if (request["type"] == "resume" && (!owner || ownerInstance != instance)) reply(mapOf("type" to "error", "reason" to "not_owner", "instance" to instance))
+                    else if (request["type"] == "connect" && owner &&
+                        (request["clientId"] != ownerClient || request["token"] != "b".repeat(32)))
+                        reply(mapOf("type" to "error", "reason" to "busy", "instance" to instance))
                     else {
-                        owner = true; ownerInstance = instance
+                        owner = true; ownerInstance = instance; ownerClient = request["clientId"].orEmpty()
                         reply(mapOf("type" to "welcome", "nonce" to request.getValue("nonce"), "session" to opens.get().toString(),
                             "token" to "b".repeat(32), "key" to "c".repeat(32), "pcName" to "Test PC", "port" to "48721", "instance" to instance))
                     }
@@ -117,5 +125,54 @@ class ConnectionLifecycleTest {
             assertEquals(1, platform.requests.count { it["type"] == "connect" })
             assertFalse(platform.recording || platform.audio || phone.state.value.ownsPc)
         } finally { phone.close() }
+    }
+    @Test fun processRestartRecoversOnlyAfterUserConnectsAndExplicitDisconnectErasesLease() = runBlocking {
+        val platform = Platform(); var phone = MicController(platform)
+        try {
+            connect(phone)
+            val first = platform.requests.first { it["type"] == "connect" }
+            assertNotNull(platform.loadConnectionState())
+            phone.close(); val opens = platform.opens.get()
+            phone = MicController(platform); delay(50)
+            assertEquals(opens, platform.opens.get(), "reopening the app must not start a connection or microphone automatically")
+            assertFalse(platform.recording)
+            connect(phone)
+            val restarted = platform.requests.last { it["type"] == "connect" }
+            assertEquals(first["clientId"], restarted["clientId"])
+            assertEquals("b".repeat(32), restarted["token"])
+            assertNotEquals(first["nonce"], restarted["nonce"])
+            phone.disconnect(); waitFor { phone.state.value.phase == ConnectionPhase.IDLE && !platform.connected && platform.loadConnectionState() == null }
+            assertNull(platform.loadConnectionState(), "an acknowledged explicit disconnect removes the protected recovery record")
+        } finally { phone.close() }
+    }
+    @Test fun missedReleaseSurvivesProcessRestartAndIsRetriedBeforeFreshPairing() = runBlocking {
+        val platform = Platform(); var phone = MicController(platform)
+        try {
+            connect(phone); platform.dropRelease = true
+            phone.disconnect(); waitFor { phone.state.value.phase == ConnectionPhase.IDLE && !platform.connected }
+            assertNotNull(platform.loadConnectionState())
+            phone.close(); platform.dropRelease = false
+            val before = platform.requests.size; phone = MicController(platform)
+            connect(phone)
+            val operations = platform.requests.drop(before).mapNotNull { it["type"] }.filter { it == "disconnect" || it == "connect" }
+            assertEquals(listOf("disconnect", "connect"), operations)
+        } finally { phone.close() }
+    }
+    @Test fun recoveryRecordsAreBoundedAndMalformedStorageCannotIntroduceAnOwner() {
+        val platform = Platform(); val leases = ConnectionLeases(platform)
+        repeat(6) { i ->
+            leases.remember(ConnectionLeases.Lease("192.168.1.${i+1}", 48721, "a".repeat(32), "b".repeat(32), "c".repeat(32)))
+        }
+        val restored = ConnectionLeases(platform)
+        assertNull(restored.find(LanComputer("192.168.1.1", 48721, "old")))
+        assertNotNull(restored.find(LanComputer("192.168.1.6", 48721, "current")))
+        assertEquals(4, platform.loadConnectionState()!!.lines().size)
+        val before = platform.loadConnectionState()
+        leases.remember(ConnectionLeases.Lease("192.168.1.7", 48721, "a".repeat(32), "b".repeat(32), "bad|instance"))
+        assertEquals(before, platform.loadConnectionState(), "untrusted fields must not become additional serialized leases")
+        platform.saveConnectionState("192.168.1.1|48721|invalid|invalid|invalid|0")
+        assertNull(ConnectionLeases(platform).find(LanComputer("192.168.1.1", 48721, "malformed")))
+        platform.saveConnectionState("x".repeat(2049))
+        assertNull(ConnectionLeases(platform).find(LanComputer("192.168.1.1", 48721, "oversized")))
     }
 }

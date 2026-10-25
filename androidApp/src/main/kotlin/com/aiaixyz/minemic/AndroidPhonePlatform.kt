@@ -17,6 +17,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
+    private val connectionState = ConnectionStateStorage(context)
+    override fun loadConnectionState(): String? = connectionState.load()
+    override fun saveConnectionState(state: String?) { connectionState.save(state) }
     private val nsd = context.getSystemService(NsdManager::class.java)
     private val main = Handler(Looper.getMainLooper())
     private val network = Executors.newSingleThreadExecutor { Thread(it, "MineMic-control").apply { isDaemon = true } }

@@ -42,7 +42,7 @@ private final class IOSGlassEffects: NSObject, NativeGlassEffectFactory {
         if let code = ProcessInfo.processInfo.environment["MINEMIC_DIAGNOSTIC_PAIR_CODE"],
            code.count == 6, code.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) {
             // The same controller backs Compose and the actual audio pipeline.
-            // This opt-in test entry never stores or prints pairing credentials.
+            // The supplied diagnostic pairing code is never persisted or printed.
             UIApplication.shared.isIdleTimerDisabled = true
             controller.setEchoCancellation(value: true)
             controller.connect(code: code, host: "")

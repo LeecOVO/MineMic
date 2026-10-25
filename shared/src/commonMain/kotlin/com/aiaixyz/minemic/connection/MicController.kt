@@ -35,6 +35,7 @@ class MicController(private val platform: PhonePlatform) {
     private var captureFrames: Channel<Pair<Long, CapturedAudio>>? = null
     private data class AbandonedOwner(val pc: LanComputer, val clientId: String, val token: String)
     private val pendingReleases = ArrayDeque<AbandonedOwner>()
+    private val leases = ConnectionLeases(platform)
     private var session: Session? = null
     private var muted = false
     private var inputGainDb = 0f
@@ -87,13 +88,18 @@ class MicController(private val platform: PhonePlatform) {
             for (pc in candidates) {
                 update { it.copy(phase = ConnectionPhase.CONNECTING, message = "正在连接 ${pc.name}…") }
                 try {
-                    pendingReleases.firstOrNull { it.pc.host == pc.host && it.pc.port == pc.port }?.let {
-                        if (notifyRelease(it)) pendingReleases.remove(it)
+                    val saved = leases.find(pc)
+                    val abandoned = pendingReleases.firstOrNull { it.pc.host == pc.host && it.pc.port == pc.port }
+                        ?: saved?.takeIf { it.releasePending }?.let { AbandonedOwner(pc, it.clientId, it.token) }
+                    abandoned?.let {
+                        if (notifyRelease(it)) { pendingReleases.remove(it); leases.forget(pc) }
                     }
+                    val lease = leases.find(pc)?.takeUnless { it.releasePending }
+                    val identity = lease?.clientId ?: clientId
                     val (channel, welcome) = open(pc, mapOf("type" to "connect", "mode" to if (host.isEmpty()) "code" else "manual",
-                        "code" to code, "clientId" to clientId, "nonce" to nonce, "name" to platform.deviceName()))
+                        "code" to code, "clientId" to identity, "token" to lease?.token.orEmpty(), "nonce" to nonce, "name" to platform.deviceName()))
                     require(welcome["nonce"] == nonce)
-                    session = parseSession(pc, clientId, welcome)
+                    session = parseSession(pc, identity, welcome)
                     maintain(channel)
                     return
                 } catch (e: CancellationException) { throw e }
@@ -141,7 +147,9 @@ class MicController(private val platform: PhonePlatform) {
         require(id in 1..0xffffffffL)
         val token = m["token"] ?: error("Missing token"); Wire.unhex(token)
         val port = m["port"]?.toIntOrNull() ?: error("Missing port"); require(port in 1024..65535)
-        return Session(pc.copy(port = port, name = m["pcName"] ?: pc.name), clientId, token, id, Wire.unhex(m["key"] ?: ""), m["caps"]?.split(",")?.contains(REFERENCE_CAPABILITY) == true, m["instance"].orEmpty())
+        return Session(pc.copy(port = port, name = m["pcName"] ?: pc.name), clientId, token, id, Wire.unhex(m["key"] ?: ""), m["caps"]?.split(",")?.contains(REFERENCE_CAPABILITY) == true, m["instance"].orEmpty()).also {
+            leases.remember(ConnectionLeases.Lease(it.pc.host, it.pc.port, it.clientId, it.token, it.instance))
+        }
     }
     private suspend fun next(channel: Channel<Event>): Map<String, String> = when (val e = channel.receive()) {
         is Event.Line -> e.fields
@@ -376,17 +384,20 @@ class MicController(private val platform: PhonePlatform) {
             val events = activeEvents
             val previousConnection = connectionJob; connectionJob = null
             intentionalRelease = true
-            clearLocal("已断开连接", closeControl = false)
+            clearLocal("已断开连接", closeControl = false, forgetLease = false)
             val abandoned = s?.let { AbandonedOwner(it.pc, it.clientId, it.token) }
             if (abandoned != null) {
                 pendingReleases.removeAll { it.pc.host == abandoned.pc.host && it.pc.port == abandoned.pc.port }
                 if (pendingReleases.size >= 4) pendingReleases.removeFirst()
                 pendingReleases.addLast(abandoned)
+                leases.remember(ConnectionLeases.Lease(abandoned.pc.host, abandoned.pc.port, abandoned.clientId, abandoned.token, s?.instance.orEmpty(), releasePending = true))
             }
             releaseJob = scope.launch {
                 try {
                     previousConnection?.cancelAndJoin()
-                    if (abandoned != null && notifyRelease(abandoned, events)) pendingReleases.remove(abandoned)
+                    if (abandoned != null && notifyRelease(abandoned, events)) {
+                        pendingReleases.remove(abandoned); leases.forget(abandoned.pc)
+                    }
                 } finally {
                     withContext(NonCancellable) { previousConnection?.cancelAndJoin() }
                     events?.close(); platform.closeControl(); intentionalRelease = false
@@ -423,13 +434,14 @@ class MicController(private val platform: PhonePlatform) {
         catch (_: Exception) { false }
         finally { lines.close(); platform.closeControl() }
     }
-    private fun clearLocal(message: String, closeControl: Boolean = true) {
+    private fun clearLocal(message: String, closeControl: Boolean = true, forgetLease: Boolean = true) {
         val old = session; session = null; activeEvents = null
         mutableState.value = MicState(message = message, muted = muted, noiseSuppression = options.noise,
             echoCancellation = options.echo, deskNoiseSuppression = options.desk, inputGainDb = inputGainDb)
         stopCapture(); platform.stopDiscovery(); platform.closeAudio(); if (closeControl) platform.closeControl()
         old?.key?.fill(0); clock = ClockSync(); referenceRequested = false; referencePaused = false
         referenceFailure = ""; referenceWaitDetail = ""; referenceRetryAt = 0L
+        if (forgetLease) old?.let { leases.forget(it.pc) }
     }
     fun close() {
         enhancer?.close(); enhancer = null; scope.cancel(); platform.stopDiscovery(); platform.stopAudio(); platform.closeAudio(); platform.closeControl()

@@ -13,7 +13,10 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 class PcInteropTest {
-    private class Platform(private val port: Int) : PhonePlatform {
+    private class SavedConnection { @Volatile var value: String? = null }
+    private class Platform(private val port: Int, private val saved: SavedConnection = SavedConnection()) : PhonePlatform {
+        override fun loadConnectionState() = saved.value
+        override fun saveConnectionState(state: String?) { saved.value = state }
         @Volatile var tcp: Socket? = null
         @Volatile var udp: DatagramSocket? = null
         private var capture = AtomicBoolean(false)
@@ -78,6 +81,25 @@ class PcInteropTest {
         override fun stopAudio() { capture.set(false) }
     }
     private suspend fun waitFor(condition: () -> Boolean) { withTimeout(9000) { while (!condition()) delay(15) } }
+    @Test fun realPcAcceptsSavedOwnerAfterMobileControllerProcessRestart() = runBlocking {
+        val path = System.getenv("MINEMIC_PC_TEST_SERVER")
+        assumeTrue("Set MINEMIC_PC_TEST_SERVER to run the real C++ fixture", !path.isNullOrEmpty())
+        val process = ProcessBuilder(path, "--serve").redirectError(ProcessBuilder.Redirect.INHERIT).start()
+        val address = process.inputStream.bufferedReader().readLine().split(' ')
+        val saved = SavedConnection(); var native = Platform(address[0].toInt(), saved); var phone = MicController(native)
+        try {
+            phone.connect(address[1], ""); waitFor { native.sentAudio.get() >= 3 }
+            assertNotNull(saved.value)
+            phone.close()
+            native = Platform(address[0].toInt(), saved); phone = MicController(native)
+            assertEquals(ConnectionPhase.IDLE, phone.state.value.phase)
+            assertEquals(0, native.sentAudio.get())
+            phone.connect(address[1], ""); waitFor { native.sentAudio.get() >= 3 }
+            assertEquals(ConnectionPhase.CONNECTED, phone.state.value.phase)
+            assertTrue(phone.state.value.ownsPc)
+            phone.disconnect(); waitFor { phone.state.value.phase == ConnectionPhase.IDLE && saved.value == null }
+        } finally { phone.close(); process.destroy(); process.waitFor() }
+    }
     @Test fun realPcWaitingDetailReachesPhoneWithoutStoppingMicrophoneOrReconnecting() = runBlocking {
         val path = System.getenv("MINEMIC_PC_TEST_SERVER")
         assumeTrue("Set MINEMIC_PC_TEST_SERVER to run the real C++ fixture", !path.isNullOrEmpty())

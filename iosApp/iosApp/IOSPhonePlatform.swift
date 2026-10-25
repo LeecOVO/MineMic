@@ -6,6 +6,9 @@ import Security
 import Shared
 
 final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate, NetServiceDelegate {
+    private let connectionState = IOSConnectionStateStorage()
+    func loadConnectionState() -> String? { connectionState.load() }
+    func saveConnectionState(state: String?) { connectionState.save(state) }
     private let queue = DispatchQueue(label: "MineMic.network", qos: .userInteractive)
     private var browser: NetServiceBrowser?
     private var services: [NetService] = []
