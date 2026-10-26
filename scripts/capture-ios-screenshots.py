@@ -10,6 +10,7 @@ import plistlib
 import re
 import struct
 import subprocess
+import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,31 @@ def run(*args, timeout=120, check=True):
 
 def simctl(*args, **kwargs):
     return run("xcrun", "simctl", *args, **kwargs)
+
+
+def run_logged(args, log_path, timeout):
+    """Keep the complete diagnostic log while streaming test progress to Actions."""
+    with log_path.open("w") as log, log_path.open() as progress:
+        process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT)
+        started = time.monotonic()
+        try:
+            while process.poll() is None:
+                chunk = progress.read()
+                if chunk:
+                    print(chunk, end="", flush=True)
+                if time.monotonic() - started > timeout:
+                    raise subprocess.TimeoutExpired(args, timeout)
+                time.sleep(5)
+            print(progress.read(), end="", flush=True)
+            return process.returncode
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
 
 
 def version(value):
@@ -127,16 +153,15 @@ def capture(app, output, derived_data, device_classes):
                    "--wifiMode", "active", "--wifiBars", "3", "--batteryState", "charged", "--batteryLevel", "100")
             result_bundle = diagnostics / f"{device_class}.xcresult"
             log_path = diagnostics / f"{device_class}.log"
-            with log_path.open("w") as log:
-                result = subprocess.run([
+            returncode = run_logged([
                     "xcodebuild", "test-without-building", "-project", str(ROOT / "iosApp/iosApp.xcodeproj"),
                     "-scheme", "MineMicScreenshots", "-configuration", "Debug",
                     "-destination", f"id={udid}", "-derivedDataPath", str(derived_data.resolve()),
                     "-resultBundlePath", str(result_bundle), "-parallel-testing-enabled", "NO",
                     "-maximum-concurrent-test-simulator-destinations", "1", "CODE_SIGNING_ALLOWED=NO",
-                ], stdout=log, stderr=subprocess.STDOUT, timeout=1200)
+                ], log_path, timeout=1200)
             export_path = diagnostics / f"{device_class}-attachments"
-            if result.returncode:
+            if returncode:
                 if result_bundle.exists():
                     run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result_bundle),
                         "--output-path", str(export_path), check=False)

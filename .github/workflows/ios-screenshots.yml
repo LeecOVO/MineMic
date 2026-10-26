@@ -33,6 +33,7 @@ jobs:
         with:
           distribution: zulu
           java-version: '21'
+          cache: gradle
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -47,6 +48,14 @@ jobs:
           xcodebuild -version
           xcrun simctl list --json > build/simulator-inventory.json
           printf '\norg.gradle.jvmargs=-Xmx2304m -Dfile.encoding=UTF-8\nkotlin.daemon.jvmargs=-Xmx1536m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> gradle.properties
+      - name: Restore native build cache
+        id: native-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/build
+            ~/.konan
+          key: screenshots-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
       - name: Build unsigned app and UI tests
         run: |
           set -o pipefail
@@ -54,10 +63,19 @@ jobs:
             -configuration Debug -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ios-screenshots CODE_SIGNING_ALLOWED=NO \
             build-for-testing 2>&1 | tee build/ios-screenshots-build.log
+      - name: Save native build cache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/build
+            ~/.konan
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - name: Capture native screenshots
         env:
           SCREENSHOT_DEVICE: ${{ inputs.device }}
         run: |
+          ./gradlew --stop
           python3 scripts/capture-ios-screenshots.py \
             --app build/ios-screenshots/Build/Products/Debug-iphonesimulator/MineMic.app \
             --device "$SCREENSHOT_DEVICE"

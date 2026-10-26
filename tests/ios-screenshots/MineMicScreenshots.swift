@@ -110,9 +110,11 @@ final class MineMicScreenshots: XCTestCase {
 
     private func enableAudioOptions() {
         tap(audioHeader())
-        let gain = app.sliders.matching(NSPredicate(format: "label BEGINSWITH %@", "收音增强")).firstMatch
+        // Compose exposes its custom slider as an adjustable Other element on iOS.
+        let gain = app.otherElements.matching(NSPredicate(format: "label == %@", "收音增强")).firstMatch
         reveal(gain)
-        gain.adjust(toNormalizedSliderPosition: 1.0 / 3.0)
+        gain.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: gain.coordinate(withNormalizedOffset: CGVector(dx: 1.0 / 3.0, dy: 0.5)))
         settle()
         XCTAssertTrue(audioHeader().label.contains("收音 +"), "Input gain must be enabled in the screenshot")
         tap(toggle("降噪"))
