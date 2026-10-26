@@ -1,0 +1,80 @@
+name: iOS App Store screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Screenshot devices
+        type: choice
+        options: [both, ipad13, iphone]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    name: Capture iPad and iPhone
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      MINEMIC_NATIVE_JOBS: '2'
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: zulu
+          java-version: '21'
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Prepare screenshot tools
+        run: |
+          python3 -m pip install Pillow==11.3.0
+          gem install --user-install xcodeproj -v 1.28.1 --no-document
+          export GEM_PATH="$(ruby -e 'print Gem.user_dir')${GEM_PATH:+:$GEM_PATH}"
+          ruby scripts/prepare-ios-screenshots.rb
+          mkdir -p build
+          xcodebuild -version
+          xcrun simctl list --json > build/simulator-inventory.json
+          printf '\norg.gradle.jvmargs=-Xmx2304m -Dfile.encoding=UTF-8\nkotlin.daemon.jvmargs=-Xmx1536m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> gradle.properties
+      - name: Build unsigned app and UI tests
+        run: |
+          set -o pipefail
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme MineMicScreenshots \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios-screenshots CODE_SIGNING_ALLOWED=NO \
+            build-for-testing 2>&1 | tee build/ios-screenshots-build.log
+      - name: Capture native screenshots
+        env:
+          SCREENSHOT_DEVICE: ${{ inputs.device }}
+        run: |
+          python3 scripts/capture-ios-screenshots.py \
+            --app build/ios-screenshots/Build/Products/Debug-iphonesimulator/MineMic.app \
+            --device "$SCREENSHOT_DEVICE"
+      - name: Upload screenshots
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MineMic-AppStore-screenshots
+          path: build/app-store-screenshots/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload diagnostics if unsuccessful
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MineMic-screenshot-diagnostics
+          path: |
+            build/ios-screenshots-build.log
+            build/simulator-inventory.json
+            build/screenshot-tests/
+          retention-days: 3
