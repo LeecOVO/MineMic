@@ -7,7 +7,7 @@ on:
         description: Screenshot devices
         type: choice
         options: [both, ipad13, iphone]
-        default: both
+        default: iphone
 
 permissions:
   contents: read
@@ -21,10 +21,11 @@ jobs:
     name: Capture ${{ matrix.device }}
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         device: ${{ inputs.device == 'both' && fromJSON('["ipad13", "iphone"]') || fromJSON(format('["{0}"]', inputs.device)) }}
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       MINEMIC_NATIVE_JOBS: '2'
     steps:
