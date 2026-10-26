@@ -15,6 +15,8 @@ group = project.main_group.new_group('MineMicScreenshots', '../tests/ios-screens
 tests.source_build_phase.add_file_reference(group.new_file('MineMicScreenshots.swift'))
 tests.build_configurations.each do |configuration|
   configuration.build_settings.merge!({
+    'PRODUCT_NAME' => 'MineMicScreenshots',
+    'PRODUCT_MODULE_NAME' => 'MineMicScreenshots',
     'PRODUCT_BUNDLE_IDENTIFIER' => 'com.aiaixyz.minemic.screenshots',
     'SWIFT_VERSION' => '5.0',
     'GENERATE_INFOPLIST_FILE' => 'YES',

@@ -75,10 +75,9 @@ final class MineMicScreenshots: XCTestCase {
     }
 
     private func reveal(_ element: XCUIElement) {
-        XCTAssertTrue(element.waitForExistence(timeout: 10), "Missing UI element")
         for _ in 0..<10 {
-            if element.isHittable { return }
-            if element.frame.maxY < app.frame.minY + 80 { drag(from: 0.3, to: 0.65) }
+            if element.exists && element.isHittable { return }
+            if element.exists && element.frame.maxY < app.frame.minY + 80 { drag(from: 0.3, to: 0.65) }
             else { drag(from: 0.75, to: 0.42) }
         }
         XCTAssertTrue(element.isHittable, "Cannot reveal \(element.label)")
@@ -95,6 +94,7 @@ final class MineMicScreenshots: XCTestCase {
     private func audioHeader() -> XCUIElement { button("声音处理") }
 
     private func showProcessing() {
+        top()
         let header = audioHeader()
         reveal(header)
         // Anchor the expanded card near the top, keeping the audio controls in view.
@@ -130,9 +130,13 @@ final class MineMicScreenshots: XCTestCase {
     }
 
     private func disableAudioOptions() {
+        top()
         tap(toggle("回声抑制"))
+        top()
         tap(toggle("降噪"))
+        top()
         tap(button("恢复 0 dB"))
+        top()
         tap(audioHeader())
         top()
     }
