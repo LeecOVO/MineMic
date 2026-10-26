@@ -5,9 +5,11 @@ final class MineMicScreenshots: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        app.launchArguments = ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+                               "-MineMic.liveActivity.enabled", "NO"]
         app.launch()
         XCTAssertTrue(text("连接电脑").waitForExistence(timeout: 30))
+        XCTAssertTrue(audioHeader().label.contains("均已关闭"), "Each scene must start with fresh audio settings")
     }
 
     override func tearDownWithError() throws {
@@ -20,19 +22,30 @@ final class MineMicScreenshots: XCTestCase {
         app.terminate()
     }
 
-    func testCaptureScenes() {
+    func test01HomeDark() {
         selectTheme("黑色")
         snapshot("01-home-dark")
+    }
+
+    func test02ProcessingDark() {
+        selectTheme("黑色")
         enableAudioOptions()
         snapshot("02-processing-dark")
+    }
 
-        disableAudioOptions()
+    func test03HomeLight() {
         selectTheme("白色")
         snapshot("03-home-light")
+    }
+
+    func test04ProcessingLight() {
+        selectTheme("白色")
         enableAudioOptions()
         snapshot("04-processing-light")
+    }
 
-        top()
+    func test05ThemeSelection() {
+        selectTheme("白色")
         tap(button("设置"))
         XCTAssertTrue(text("外观").waitForExistence(timeout: 10))
         snapshot("05-theme-selection")
@@ -95,6 +108,8 @@ final class MineMicScreenshots: XCTestCase {
 
     private func showProcessing() {
         top()
+        // The tablet can show the audio controls from the top without cutting the title.
+        if app.frame.width >= 700 { return }
         let header = audioHeader()
         reveal(header)
         // Anchor the expanded card near the top, keeping the audio controls in view.
@@ -123,8 +138,12 @@ final class MineMicScreenshots: XCTestCase {
             else { drag(from: 0.3, to: 0.3 + fraction) }
         }
         XCTAssertTrue(gain.frame.midY > app.frame.minY + 100 && gain.frame.midY < app.frame.maxY - 100)
-        gain.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)).tap()
-        settle()
+        for _ in 0..<3 {
+            gain.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
+                .press(forDuration: 0.1, thenDragTo: gain.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)))
+            settle()
+            if audioHeader().label.contains("收音 +") { break }
+        }
         XCTAssertTrue(audioHeader().label.contains("收音 +"), "Input gain must be enabled in the screenshot")
         tap(toggle("降噪"))
         tap(button("桌面游戏"))
@@ -135,21 +154,9 @@ final class MineMicScreenshots: XCTestCase {
         tap(button("锁屏控制"))
         let lockScreen = toggle("在锁屏上显示")
         reveal(lockScreen)
-        if lockScreen.isEnabled, (lockScreen.value as? String) == "0" { tap(lockScreen) }
+        if lockScreen.isEnabled, button("锁屏控制").label.contains("已关闭") { tap(lockScreen) }
         tap(button("锁屏控制"))
         showProcessing()
-    }
-
-    private func disableAudioOptions() {
-        top()
-        tap(toggle("回声抑制"))
-        top()
-        tap(toggle("降噪"))
-        top()
-        tap(button("恢复 0 dB"))
-        top()
-        tap(audioHeader())
-        top()
     }
 
     private func snapshot(_ name: String) {
