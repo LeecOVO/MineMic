@@ -20,7 +20,7 @@ internal actual val usesSystemPairingAppearance: Boolean = true
 
 @Composable
 internal actual fun PlatformPairingSelection(
-    labels: List<String>, position: Float, enabled: Boolean, engaged: Boolean, rtl: Boolean,
+    labels: List<String>, position: Float, enabled: Boolean, engaged: Boolean, rtl: Boolean, compact: Boolean,
     modifier: Modifier,
 ): Boolean {
     val factory = LocalNativeGlassEffectFactory.current ?: return false
@@ -38,7 +38,7 @@ internal actual fun PlatformPairingSelection(
             // The overlay is hosted outside Compose's controller; mirror only the app's light/dark mode.
             view.overrideUserInterfaceStyle = if (dark) UIUserInterfaceStyle.UIUserInterfaceStyleDark
                 else UIUserInterfaceStyle.UIUserInterfaceStyleLight
-            view.update(labels, position.toDouble(), enabled, engaged, rtl, glass, fontSize.toDouble())
+            view.update(labels, position.toDouble(), enabled, engaged, rtl, compact, glass, fontSize.toDouble())
         },
     )
     return true
@@ -52,6 +52,7 @@ private class PairingGlassView : UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)) 
     private var currentEffect: UIVisualEffect? = null
     private var position = 0.0
     private var rtl = false
+    private var compact = false
     private var engaged = false
     private var fontSize = 0.0
 
@@ -78,11 +79,12 @@ private class PairingGlassView : UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)) 
     }
 
     fun update(
-        labels: List<String>, position: Double, enabled: Boolean, engaged: Boolean, rtl: Boolean,
+        labels: List<String>, position: Double, enabled: Boolean, engaged: Boolean, rtl: Boolean, compact: Boolean,
         glass: UIVisualEffect, fontSize: Double,
     ) {
         this.position = position.coerceIn(0.0, 1.0)
         this.rtl = rtl
+        this.compact = compact
         if (this.fontSize != fontSize) {
             this.fontSize = fontSize
             val font = UIFont.systemFontOfSize(fontSize, weight = UIFontWeightSemibold)
@@ -128,7 +130,7 @@ private class PairingGlassView : UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)) 
         // Changing bounds/center keeps layout independent from the press transform.
         lens.setBounds(CGRectMake(0.0, 0.0, lensWidth, height))
         lens.setCenter(platform.CoreGraphics.CGPointMake(x + lensWidth / 2.0, height / 2.0))
-        lens.layer.cornerRadius = height / 2.0
+        lens.layer.cornerRadius = if (compact) 4.0 else height / 2.0
         labelsLayout(cell, height, x)
     }
 
@@ -136,10 +138,11 @@ private class PairingGlassView : UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)) 
         for (index in 0..1) {
             val physicalIndex = if (rtl) 1 - index else index
             val x = physicalIndex * cell
-            val textWidth = (cell - 16.0).coerceAtLeast(1.0)
-            backLabels[index].setFrame(CGRectMake(x + 8.0, 0.0, textWidth, height))
+            val inset = if (compact) 6.0 else 8.0
+            val textWidth = (cell - inset * 2).coerceAtLeast(1.0)
+            backLabels[index].setFrame(CGRectMake(x + inset, 0.0, textWidth, height))
             // Clipping by the glass lens keeps the selected text sharp as it follows the pager.
-            frontLabels[index].setFrame(CGRectMake(x - lensX + 8.0, 0.0, textWidth, height))
+            frontLabels[index].setFrame(CGRectMake(x - lensX + inset, 0.0, textWidth, height))
         }
     }
 }

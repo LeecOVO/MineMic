@@ -16,6 +16,22 @@ class WireTest {
         assertFails { ControlJson.decode("""{"app":"MineMic","v":"1"}""") }
         assertFails { ControlJson.decode("""{"app":"MineMic","v":"2","n":123}""") }
     }
+    @Test fun ipv6LiteralsAreValidatedWithoutDnsAndCanonicalizedForRecovery() {
+        for (host in listOf("::", "::1", "2001:db8::1234", "FD12:3456:0:0:0:0:0:A", "fe80::1%en0",
+                "fe80::1%12", "[fd12::abcd]", "::ffff:192.168.1.2", "1:2:3:4:5:6:7:8")) {
+            assertTrue(Wire.validIpv6(host), host)
+            assertTrue(IpVersion.IPV6.accepts(assertNotNull(Wire.normalizeIpAddress(host))))
+            assertFalse(IpVersion.IPV4.accepts(host))
+        }
+        for (host in listOf("localhost", "192.168.1.2", ":1", "1:", "1::2::3", "1:::2", "1:2:3:4:5:6:7",
+                "1:2:3:4:5:6:7:8:9", "1:2:3:4:5:6:7::8", "12345::", "gggg::", "[::1]:48721", "::1%",
+                "::1%en0%1", "::1%bad|zone", "::1/64", "::ffff:999.1.1.1", "https://[::1]", " ::1"))
+            assertFalse(Wire.validIpv6(host), host)
+        assertEquals("fd12:0:0:0:0:0:0:a", Wire.normalizeIpAddress(" [FD12::000a] "))
+        assertEquals("fe80:0:0:0:0:0:0:1%en0", Wire.normalizeIpAddress("fe80::1%en0"))
+        assertEquals("192.168.1.2", Wire.normalizeIpAddress("192.168.001.002"))
+        assertNull(Wire.normalizeIpAddress("[::1]:48721"))
+    }
     @Test fun audioHeaderAndWrap() {
         val pcm = ByteArray(960) { it.toByte() }
         val b = Wire.audioBody(0x12345678, 0xffffffffL, pcm)

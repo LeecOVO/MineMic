@@ -11,22 +11,24 @@ internal class ConnectionLeases(private val platform: PhonePlatform) {
                 val fields = line.split('|')
                 if (fields.size == 6) {
                     val port = fields[1].toIntOrNull()
-                    if (Wire.validIpv4(fields[0]) && port != null && port in 1024..65535 &&
+                    val host = Wire.normalizeIpAddress(fields[0])
+                    if (host != null && port != null && port in 1024..65535 &&
                         hex(fields[2]) && hex(fields[3]) && (fields[4].isEmpty() || hex(fields[4])) && fields[5] in listOf("0", "1"))
-                        leases.addLast(Lease(fields[0], port, fields[2], fields[3], fields[4], fields[5] == "1"))
+                        leases.addLast(Lease(host, port, fields[2], fields[3], fields[4], fields[5] == "1"))
                 }
             }
     }
-    fun find(pc: LanComputer): Lease? = leases.lastOrNull { it.host == pc.host && it.port == pc.port }
+    fun find(pc: LanComputer): Lease? = leases.lastOrNull { it.host == Wire.normalizeIpAddress(pc.host) && it.port == pc.port }
     fun remember(lease: Lease) {
-        if (!Wire.validIpv4(lease.host) || lease.port !in 1024..65535 || !hex(lease.clientId) ||
+        val host = Wire.normalizeIpAddress(lease.host) ?: return
+        if (lease.port !in 1024..65535 || !hex(lease.clientId) ||
             !hex(lease.token) || (lease.instance.isNotEmpty() && !hex(lease.instance))) return
-        leases.removeAll { it.host == lease.host && it.port == lease.port }
+        leases.removeAll { it.host == host && it.port == lease.port }
         if (leases.size >= 4) leases.removeFirst()
-        leases.addLast(lease); persist()
+        leases.addLast(lease.copy(host = host)); persist()
     }
     fun forget(pc: LanComputer) {
-        if (leases.removeAll { it.host == pc.host && it.port == pc.port }) persist()
+        if (leases.removeAll { it.host == Wire.normalizeIpAddress(pc.host) && it.port == pc.port }) persist()
     }
     private fun persist() {
         val state = leases.takeIf { it.isNotEmpty() }?.joinToString("\n") {

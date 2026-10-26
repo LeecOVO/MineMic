@@ -319,6 +319,38 @@ class AudioEnhancerTest {
         assertNotNull(clock.current(6100500), "recent accepted replies must keep synchronization valid even while the best RTT sample ages out")
         assertNull(clock.current(10002001), "synchronization must still expire after five seconds without an accepted reply")
     }
+    @Test fun sessionElapsedClockRetainsExactAudioMappingWithoutExposingPhoneUptime() {
+        val origin = 9_000_000_000_000L
+        val legacy = ClockSync(); val session = ClockSync(origin)
+        val pcOffset = -4_000_000_000_000L
+        for (i in 0..20) {
+            val sent = origin + i * 500000L
+            val rtt = if (i == 0) 100L else 2000L
+            val wire = assertNotNull(session.sent(sent))
+            assertEquals(i * 500000L, wire)
+            assertTrue(wire < origin, "wire contains only time elapsed after the session began")
+            legacy.sent(sent)
+            val received = sent + rtt
+            assertTrue(legacy.receive(sent, sent + pcOffset + rtt / 2, sent + pcOffset + rtt / 2, received))
+            assertFalse(session.receive(sent, sent + pcOffset, sent + pcOffset, received), "raw uptime cannot match the pending request")
+            assertTrue(session.receive(wire, sent + pcOffset + rtt / 2, sent + pcOffset + rtt / 2, received))
+            assertEquals(legacy.current(received), session.current(received), "AEC must retain the original host-time offset and freshness")
+            assertFalse(session.receive(wire, sent + pcOffset, sent + pcOffset, received), "replayed replies are rejected")
+        }
+        assertNull(session.sent(origin - 1))
+    }
+    @Test fun elapsedClockMatchesOutOfOrderRepliesAndBoundsOutstandingRequests() {
+        val origin = 1_000_000_000L
+        val clock = ClockSync(origin)
+        val first = assertNotNull(clock.sent(origin + 1000))
+        val second = assertNotNull(clock.sent(origin + 2000))
+        assertTrue(clock.receive(second, origin + 102050, origin + 102100, origin + 2200))
+        assertTrue(clock.receive(first, origin + 101050, origin + 101100, origin + 2300))
+        assertNull(clock.current(origin + 6000000))
+        repeat(9) { clock.sent(origin + 10000 + it) }
+        assertFalse(clock.receive(10000, origin + 110050, origin + 110100, origin + 12000), "old outstanding requests stay bounded")
+        assertTrue(clock.receive(10008, origin + 110058, origin + 110108, origin + 10208))
+    }
     @Test fun concealedResamplerOutputNeverReplacesMicrophoneAndNoiseRemainsIndependent() = runBlocking {
         for (noise in listOf(false, true)) {
             val time = 1000000L

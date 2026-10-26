@@ -8,6 +8,6 @@ internal expect val usesSystemPairingAppearance: Boolean
 /** Returns true when the platform draws the selection and labels; gestures remain in Compose. */
 @Composable
 internal expect fun PlatformPairingSelection(
-    labels: List<String>, position: Float, enabled: Boolean, engaged: Boolean, rtl: Boolean,
+    labels: List<String>, position: Float, enabled: Boolean, engaged: Boolean, rtl: Boolean, compact: Boolean,
     modifier: Modifier,
 ): Boolean

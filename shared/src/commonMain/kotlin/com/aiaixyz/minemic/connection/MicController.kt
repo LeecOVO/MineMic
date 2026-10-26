@@ -68,15 +68,17 @@ class MicController(private val platform: PhonePlatform) {
         return object : MicStateSubscription { override fun cancel() { job.cancel() } }
     }
 
-    fun connect(code: String, host: String) {
+    fun connect(code: String, host: String) = connect(code, host, IpVersion.IPV4)
+    fun connect(code: String, host: String, ipVersion: IpVersion) {
         scope.launch {
             if (session != null || connectionJob?.isActive == true) return@launch
             releaseJob?.cancelAndJoin(); releaseJob = null
-            if (host.isBlank() && !Wire.validCode(code) || host.isNotBlank() && !Wire.validIpv4(host.trim())) {
-                update { it.copy(phase = ConnectionPhase.ERROR, message = if (host.isBlank()) "请输入完整的 6 位数字配对码" else "请输入有效的 PC IPv4 地址") }
+            val normalized = Wire.normalizeIpAddress(host)
+            if (host.isBlank() && !Wire.validCode(code) || host.isNotBlank() && (normalized == null || !ipVersion.accepts(normalized))) {
+                update { it.copy(phase = ConnectionPhase.ERROR, message = if (host.isBlank()) "请输入完整的 6 位数字配对码" else "请输入有效的 PC ${if (ipVersion == IpVersion.IPV6) "IPv6" else "IPv4"} 地址") }
                 return@launch
             }
-            connectionJob = scope.launch { establish(code, host.trim()) }
+            connectionJob = scope.launch { establish(code, normalized.orEmpty()) }
         }
     }
     private suspend fun establish(code: String, host: String) {
@@ -114,7 +116,11 @@ class MicController(private val platform: PhonePlatform) {
     private suspend fun discover(): List<LanComputer> {
         update { it.copy(phase = ConnectionPhase.SEARCHING, message = "正在查找同一局域网内的 PC…") }
         val found = Channel<LanComputer>(32)
-        platform.discover({ found.trySend(it) }, { found.close(PairError("discovery")) })
+        platform.discover({ pc ->
+            val address = Wire.normalizeIpAddress(pc.host)
+            if (address != null && pc.port in 1024..65535)
+                found.trySend(pc.copy(host = address))
+        }, { found.close(PairError("discovery")) })
         try {
             val first = try { withTimeout(8000) { found.receive() } } catch (_: TimeoutCancellationException) { throw PairError("discovery") }
             delay(1000)
@@ -164,7 +170,7 @@ class MicController(private val platform: PhonePlatform) {
             var ping: Job? = null
             var audioTransportFailed = false
             try {
-                clock = ClockSync(); referenceRequested = false; referencePaused = true; captureSequence = 0L
+                clock = ClockSync(platform.monotonicMicros()); referenceRequested = false; referencePaused = true; captureSequence = 0L
                 referenceRetryAt = 0L; referenceFailure = ""; referenceWaitDetail = ""
                 beginAudio()
                 val processing = enhancer
@@ -181,8 +187,9 @@ class MicController(private val platform: PhonePlatform) {
                         requestReference()
                         platform.sendControl(ControlJson.encode(mapOf("type" to "ping")))
                         if (s.supportsReference && options.echo) {
-                            val t1 = platform.monotonicMicros(); clock.sent(t1)
-                            platform.sendControl(ControlJson.encode(mapOf("type" to "clock", "t1" to t1.toString())))
+                            clock.sent(platform.monotonicMicros())?.let { elapsed ->
+                                platform.sendControl(ControlJson.encode(mapOf("type" to "clock", "t1" to elapsed.toString())))
+                            }
                         }
                         delay(if (samples++ < 5 && options.echo) 200 else 1000)
                     }

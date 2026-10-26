@@ -5,6 +5,7 @@ import androidx.compose.runtime.*
 import com.aiaixyz.minemic.connection.MicController
 import com.aiaixyz.minemic.connection.MicState
 import com.aiaixyz.minemic.connection.LockScreenControls
+import com.aiaixyz.minemic.connection.IpVersion
 import com.aiaixyz.minemic.ui.MineMicScreen
 import com.aiaixyz.minemic.ui.MineMicTheme
 import com.aiaixyz.minemic.ui.AppearanceSettings
@@ -27,13 +28,14 @@ fun App(
     onConnect: ((String, String) -> Unit)? = null,
     lockScreenControls: LockScreenControls?,
     appearanceSettings: AppearanceSettings? = null,
+    onConnectWithIpVersion: ((String, String, IpVersion) -> Unit)? = null,
 ) {
     val appearance = appearanceSettings ?: rememberAppearanceSettings()
     val dark = appearance.mode.isDark(isSystemInDarkTheme())
     PlatformAppearance(appearance.mode, dark)
     val observedState = controller?.state?.collectAsState()
     // Meter changes invalidate only the meter, not the form, controls or dialogs.
-    val preview = onConnect != null
+    val preview = onConnect != null || onConnectWithIpVersion != null
     val state by remember(observedState, preview) {
         derivedStateOf(structuralEqualityPolicy()) {
             observedState?.value?.copy(level = 0f) ?: if (preview) MicState() else
@@ -54,8 +56,15 @@ fun App(
             themeMode = appearance.mode,
             onThemeModeChange = appearance::select,
             controlsEnabled = controller != null,
-            connectEnabled = controller != null || onConnect != null,
+            connectEnabled = controller != null || onConnect != null || onConnectWithIpVersion != null,
             onConnect = { code, host -> (onConnect ?: { c, ip -> controller?.connect(c, ip) })(code, host) },
+            onConnectWithIpVersion = { code, host, version ->
+                when {
+                    onConnectWithIpVersion != null -> onConnectWithIpVersion(code, host, version)
+                    onConnect != null -> onConnect(code, host)
+                    else -> controller?.connect(code, host, version)
+                }
+            },
             onMutedChange = { controller?.setMuted(it) },
             onNoiseSuppressionChange = { controller?.setNoiseSuppression(it) },
             onEchoCancellationChange = { controller?.setEchoCancellation(it) },

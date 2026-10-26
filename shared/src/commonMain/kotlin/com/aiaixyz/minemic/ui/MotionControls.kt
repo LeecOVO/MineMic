@@ -56,12 +56,13 @@ import kotlin.math.roundToInt
 @Composable
 internal fun Modifier.pressFeedback(
     source: MutableInteractionSource, cornerRadius: Dp = 12.dp, focusTint: Color? = null,
+    reducedMotion: Boolean = false,
 ): Modifier {
     val pressed by source.collectIsPressedAsState()
     val focused by source.collectIsFocusedAsState()
     val focusColor = focusTint ?: MaterialTheme.colorScheme.primary
-    val scale by animateFloatAsState(if (pressed) .98f else 1f,
-        tween(if (pressed) 80 else 160, easing = FastOutSlowInEasing))
+    val scale by animateFloatAsState(if (pressed && !reducedMotion) .98f else 1f,
+        tween(if (reducedMotion) 0 else if (pressed) 80 else 160, easing = FastOutSlowInEasing))
     return graphicsLayer { scaleX = scale; scaleY = scale }.drawWithContent {
         drawContent()
         if (focused) drawRoundRect(focusColor, cornerRadius = CornerRadius(cornerRadius.toPx()), style = Stroke(2.dp.toPx()))
@@ -69,10 +70,12 @@ internal fun Modifier.pressFeedback(
 }
 
 @Composable
-internal fun Reveal(visible: Boolean, content: @Composable () -> Unit) {
+internal fun Reveal(visible: Boolean, reducedMotion: Boolean = false, content: @Composable () -> Unit) {
     AnimatedVisibility(visible,
-        enter = expandVertically(tween(240, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) + fadeIn(tween(160, delayMillis = 40)),
-        exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + fadeOut(tween(100)),
+        enter = expandVertically(tween(if (reducedMotion) 0 else 240, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) +
+            fadeIn(tween(if (reducedMotion) 0 else 160, delayMillis = if (reducedMotion) 0 else 40)),
+        exit = shrinkVertically(tween(if (reducedMotion) 0 else 200, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) +
+            fadeOut(tween(if (reducedMotion) 0 else 100)),
     ) { content() }
 }
 
@@ -88,6 +91,8 @@ internal fun SlidingChoice(
     onDraggingChange: (Boolean) -> Unit = {},
     style: SlidingChoiceStyle = SlidingChoiceStyle.Default,
     nativeMaterialVisible: Boolean = true,
+    compact: Boolean = false,
+    reducedMotion: Boolean = false,
 ) {
     require(labels.size == 2)
     val latestPosition by rememberUpdatedState(position)
@@ -100,8 +105,11 @@ internal fun SlidingChoice(
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val direction = if (rtl) -1 else 1
     val localPosition = remember { Animatable(position) }
-    LaunchedEffect(position, dragging) {
-        if (!dragging && latestDrag == null) localPosition.animateTo(position, tween(240, easing = FastOutSlowInEasing))
+    LaunchedEffect(position, dragging, reducedMotion) {
+        if (!dragging && latestDrag == null) {
+            if (reducedMotion) localPosition.snapTo(position)
+            else localPosition.animateTo(position, tween(240, easing = FastOutSlowInEasing))
+        }
     }
     val colors = MaterialTheme.colorScheme
     val pairing = style == SlidingChoiceStyle.Pairing
@@ -116,11 +124,13 @@ internal fun SlidingChoice(
     }
     val trackBorder = if (dark) colors.primary.copy(alpha = .28f) else Color(0xFFB8CEC9)
     val pillBorder = if (dark) colors.primary.copy(alpha = .75f) else Color(0xFF398D7D)
-    BoxWithConstraints(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+    val trackRadius = if (compact) 6.dp else 14.dp
+    val pillRadius = if (compact) 4.dp else 10.dp
+    BoxWithConstraints(Modifier.fillMaxWidth().clip(RoundedCornerShape(trackRadius))
         .background(trackColor)
         .then(if (pairing && !systemPairing) Modifier.border(1.dp, trackBorder.copy(alpha = if (enabled) trackBorder.alpha else .35f),
-            RoundedCornerShape(14.dp)) else Modifier)
-        .padding(4.dp)) {
+            RoundedCornerShape(trackRadius)) else Modifier)
+        .padding(if (compact) 2.dp else 4.dp)) {
         val cellWidth = maxWidth / 2
         val cellPx = with(LocalDensity.current) { cellWidth.toPx() }
         val shown = if (dragging) dragPosition else if (onDragPosition != null) position else localPosition.value
@@ -151,17 +161,20 @@ internal fun SlidingChoice(
         )
         val nativeGlass = if (pairing && nativeMaterialVisible) PlatformPairingSelection(
             labels = labels, position = shown.coerceIn(0f, 1f), enabled = enabled,
-            engaged = dragging || pillPressed, rtl = rtl, modifier = Modifier.matchParentSize(),
+            engaged = dragging || pillPressed, rtl = rtl, compact = compact, modifier = Modifier.matchParentSize(),
         ) else false
         if (!nativeGlass) Box(Modifier.matchParentSize()) {
             val pill = Modifier.offset(x = cellWidth * shown.coerceIn(0f, 1f))
-                .width(cellWidth).fillMaxHeight().clip(RoundedCornerShape(10.dp))
+                .width(cellWidth).fillMaxHeight().clip(RoundedCornerShape(pillRadius))
             if (systemPairing) {
                 Box(pill.background(colors.surfaceContainerHigh)
-                    .border(1.dp, colors.outlineVariant, RoundedCornerShape(10.dp)))
+                    .border(1.dp, colors.outlineVariant, RoundedCornerShape(pillRadius)))
             } else if (pairing) {
-                Box(pill.background(colors.primaryContainer)
-                    .border(1.dp, pillBorder.copy(alpha = if (enabled) pillBorder.alpha else .35f), RoundedCornerShape(10.dp)))
+                val fill = if (compact) lerp(colors.surfaceContainerHigh, colors.primaryContainer, shown.coerceIn(0f, 1f))
+                    else colors.primaryContainer
+                val edge = if (compact) lerp(colors.outline, pillBorder, shown.coerceIn(0f, 1f)) else pillBorder
+                Box(pill.background(fill)
+                    .border(1.dp, edge.copy(alpha = if (enabled) edge.alpha else .35f), RoundedCornerShape(pillRadius)))
             } else Box(pill.background(colors.surface))
         }
         Row(Modifier.fillMaxWidth().then(drag).selectableGroup()) {
@@ -169,18 +182,21 @@ internal fun SlidingChoice(
                 val individualSource = remember { MutableInteractionSource() }
                 val source = if (pairing) pillSource else individualSource
                 val emphasis = (1f - abs(shown - index)).coerceIn(0f, 1f)
-                Box(Modifier.weight(1f).pressFeedback(source,
-                    focusTint = if (systemPairing) colors.outline else null).clip(RoundedCornerShape(10.dp))
+                Box(Modifier.weight(1f).pressFeedback(source, cornerRadius = if (compact) 4.dp else 12.dp,
+                    focusTint = if (systemPairing) colors.outline else null,
+                    reducedMotion = reducedMotion).clip(RoundedCornerShape(pillRadius))
                     .selectable(selected = selectedIndex == index, enabled = enabled,
                         role = Role.Tab, interactionSource = source, indication = null,
                         onClick = { latestInteraction(); latestSelect(index) })
-                    .heightIn(min = 46.dp).padding(horizontal = 8.dp, vertical = 12.dp),
+                    .heightIn(min = if (compact) 24.dp else 46.dp)
+                    .padding(horizontal = if (compact) 6.dp else 8.dp, vertical = if (compact) 2.dp else 12.dp),
                     contentAlignment = Alignment.Center) {
                     Text(label, style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = if (nativeGlass) Color.Transparent else lerp(colors.onSurfaceVariant,
                             when {
                                 systemPairing -> colors.onSurface
+                                pairing && compact -> lerp(colors.onSurface, colors.onPrimaryContainer, shown.coerceIn(0f, 1f))
                                 pairing -> colors.onPrimaryContainer
                                 else -> colors.primary
                             }, emphasis)
@@ -195,6 +211,7 @@ internal fun SlidingChoice(
 internal fun DisclosureCard(
     title: String, summary: String, expanded: Boolean, onToggle: () -> Unit,
     icon: @Composable () -> Unit, footer: (@Composable ColumnScope.() -> Unit)? = null,
+    footerVisible: Boolean = true, footerReducedMotion: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val source = remember { MutableInteractionSource() }
@@ -224,7 +241,11 @@ internal fun DisclosureCard(
             Reveal(expanded) {
                 Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 18.dp), content = content)
             }
-            footer?.let { Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), content = it) }
+            footer?.let { footerContent ->
+                Reveal(footerVisible, reducedMotion = footerReducedMotion) {
+                    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), content = footerContent)
+                }
+            }
         }
     }
 }

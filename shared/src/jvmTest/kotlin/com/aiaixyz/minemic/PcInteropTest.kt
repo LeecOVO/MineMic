@@ -14,7 +14,8 @@ import javax.crypto.spec.SecretKeySpec
 
 class PcInteropTest {
     private class SavedConnection { @Volatile var value: String? = null }
-    private class Platform(private val port: Int, private val saved: SavedConnection = SavedConnection()) : PhonePlatform {
+    private class Platform(private val port: Int, private val saved: SavedConnection = SavedConnection(), private val host: String = "127.0.0.1",
+                           private val rejectIpv4: Boolean = false) : PhonePlatform {
         override fun loadConnectionState() = saved.value
         override fun saveConnectionState(state: String?) { saved.value = state }
         @Volatile var tcp: Socket? = null
@@ -25,6 +26,7 @@ class PcInteropTest {
         @Volatile private var key = ByteArray(16)
         val validReferences = AtomicInteger()
         val clockReplies = AtomicInteger()
+        val clockRequests = java.util.concurrent.CopyOnWriteArrayList<Long>()
         val audioConnections = AtomicInteger()
         val sentAudio = AtomicInteger()
         @Volatile var audioError: ((String) -> Unit)? = null
@@ -32,10 +34,14 @@ class PcInteropTest {
         override fun deviceName() = "Kotlin integration test"
         override fun randomBytes(count: Int) = ByteArray(count).also { SecureRandom().nextBytes(it) }
         override fun hmac(body: ByteArray, key: ByteArray) = Mac.getInstance("HmacSHA256").run { init(SecretKeySpec(key, "HmacSHA256")); doFinal(body) }
-        override fun discover(onFound: (LanComputer) -> Unit, onError: (String) -> Unit) { onFound(LanComputer("127.0.0.1", port, "Test PC")) }
+        override fun discover(onFound: (LanComputer) -> Unit, onError: (String) -> Unit) {
+            if (host == "::1" && rejectIpv4) onFound(LanComputer("127.0.0.1", port, "Unavailable IPv4 candidate"))
+            onFound(LanComputer(host, port, "Test PC"))
+        }
         override fun stopDiscovery() {}
         override fun openControl(host: String, port: Int, onReady: () -> Unit, onLine: (String) -> Unit, onClosed: () -> Unit, onError: (String) -> Unit) {
             closeControl(); val attempt = epoch
+            if (rejectIpv4 && !host.contains(':')) { onError("IPv4 unavailable in this test"); return }
             Thread {
                 try {
                     val socket = Socket(host, port).apply { tcpNoDelay = true }; tcp = socket; onReady()
@@ -51,7 +57,11 @@ class PcInteropTest {
                 } catch (e: Exception) { if (epoch == attempt) onError(e.message ?: "closed") }
             }.apply { isDaemon = true; start() }
         }
-        override fun sendControl(line: String) { tcp?.getOutputStream()?.write((line + "\n").toByteArray()) }
+        override fun sendControl(line: String) {
+            val fields = ControlJson.decode(line)
+            if (fields["type"] == "clock") clockRequests += fields.getValue("t1").toLong()
+            tcp?.getOutputStream()?.write((line + "\n").toByteArray())
+        }
         override fun closeControl() { epoch++; runCatching { tcp?.close() }; tcp = null }
         override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit, onError: (String) -> Unit) {
             closeAudio(); val socket = DatagramSocket().apply { connect(InetAddress.getByName(host), port) }; udp = socket
@@ -81,6 +91,34 @@ class PcInteropTest {
         override fun stopAudio() { capture.set(false) }
     }
     private suspend fun waitFor(condition: () -> Boolean) { withTimeout(9000) { while (!condition()) delay(15) } }
+    @Test fun realPcIpv6PairingAudioReferenceReconnectAndColdRecovery() = runBlocking {
+        val path = System.getenv("MINEMIC_PC_TEST_SERVER")
+        assumeTrue("Set MINEMIC_PC_TEST_SERVER to run the real C++ fixture", !path.isNullOrEmpty())
+        val process = ProcessBuilder(path, "--serve-reference").redirectError(ProcessBuilder.Redirect.INHERIT).start()
+        val address = process.inputStream.bufferedReader().readLine().split(' ')
+        val port = address[0].toInt(); val saved = SavedConnection()
+        var native = Platform(port, saved, "::1", rejectIpv4 = true); var phone = MicController(native)
+        val other = MicController(Platform(port))
+        try {
+            phone.setEchoCancellation(true); phone.connect(address[1], "")
+            waitFor { native.sentAudio.get() >= 3 && native.validReferences.get() >= 10 }
+            assertTrue(native.tcp?.inetAddress is Inet6Address, "code pairing automatically falls back to IPv6 TCP")
+            assertTrue(native.udp?.inetAddress is Inet6Address, "reference and microphone share IPv6 UDP")
+            other.connect(address[1], ""); waitFor { other.state.value.phase == ConnectionPhase.ERROR }
+            assertTrue(other.state.value.message.contains("另一台手机"), "IPv4 cannot take IPv6 ownership")
+            native.tcp?.close()
+            waitFor { native.audioConnections.get() >= 2 && phone.state.value.recording }
+            assertTrue(phone.state.value.ownsPc)
+            phone.close()
+            native = Platform(port, saved, "::1", rejectIpv4 = true); phone = MicController(native)
+            phone.setEchoCancellation(true); phone.connect(address[1], "")
+            waitFor { native.validReferences.get() >= 10 && native.sentAudio.get() >= 3 }
+            assertTrue(phone.state.value.ownsPc, "saved IPv6 lease recovers after controller reconstruction")
+            phone.disconnect(); waitFor { phone.state.value.phase == ConnectionPhase.IDLE && saved.value == null }
+            other.connect(address[1], ""); waitFor { other.state.value.recording }
+            assertTrue(other.state.value.ownsPc, "same pairing code admits IPv4 after IPv6 release")
+        } finally { phone.close(); other.close(); process.destroy(); process.waitFor() }
+    }
     @Test fun realPcAcceptsSavedOwnerAfterMobileControllerProcessRestart() = runBlocking {
         val path = System.getenv("MINEMIC_PC_TEST_SERVER")
         assumeTrue("Set MINEMIC_PC_TEST_SERVER to run the real C++ fixture", !path.isNullOrEmpty())
@@ -151,6 +189,8 @@ class PcInteropTest {
             phone.setEchoCancellation(true); phone.setNoiseSuppression(true)
             phone.connect(address[1], "")
             waitFor { native.validReferences.get() >= 10 && native.clockReplies.get() > 0 && phone.state.value.recording }
+            assertTrue(native.clockRequests.isNotEmpty() && native.clockRequests.all { it in 0..30_000_000L },
+                "real PC must receive session elapsed time rather than raw phone uptime")
             // JVM deliberately has no native APM: enhanced mode must still upload raw PCM.
             assertTrue(phone.state.value.ownsPc)
             // No native APM exists on JVM. Receiving valid reference must not be

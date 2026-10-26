@@ -1,6 +1,7 @@
 package com.aiaixyz.minemic.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,6 +61,7 @@ import com.aiaixyz.minemic.connection.ConnectionPhase
 import com.aiaixyz.minemic.connection.MicState
 import com.aiaixyz.minemic.connection.LockScreenState
 import com.aiaixyz.minemic.connection.Wire
+import com.aiaixyz.minemic.connection.IpVersion
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -86,6 +89,8 @@ fun MineMicScreen(
     nativeMaterialVisible: Boolean = true,
     licenseText: String? = null,
     licenseError: Boolean = false,
+    onConnectWithIpVersion: ((String, String, IpVersion) -> Unit)? = null,
+    reducedMotion: Boolean = rememberReducedMotion(),
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     SettingsBackHandler(settingsOpen) { settingsOpen = false }
@@ -136,12 +141,18 @@ fun MineMicScreen(
                     if (state.ownsPc) {
                         SessionPanel(state, controlsEnabled, onMutedChange, onRetryMicrophone, onDisconnect, audioLevel)
                     } else {
-                        PairingPanel(state, connectEnabled, onConnect, onDisconnect,
+                        PairingPanel(state, connectEnabled,
+                            onConnect = { code, host, version ->
+                                if (onConnectWithIpVersion != null) onConnectWithIpVersion(code, host, version)
+                                else onConnect(code, host)
+                            }, onCancel = onDisconnect,
+                            reducedMotion = reducedMotion,
                             nativeMaterialVisible = nativeMaterialVisible && !pageCoversHome && !help,
                             onInputFocusChange = { inputFocused = it }, dismissInput = dismissInput)
                     }
                     Spacer(Modifier.height(20.dp))
                     EnhancementPanel(state, controlsEnabled,
+                        reducedMotion = reducedMotion,
                         onNoise = { dismissInput(); onNoiseSuppressionChange(it) },
                         onEcho = { dismissInput(); onEchoCancellationChange(it) },
                         onGain = { dismissInput(); onInputGainChange(it) },
@@ -211,24 +222,30 @@ fun MineMicScreen(
 
 @Composable
 private fun PairingPanel(
-    state: MicState, enabled: Boolean, onConnect: (String, String) -> Unit, onCancel: () -> Unit,
-    nativeMaterialVisible: Boolean,
+    state: MicState, enabled: Boolean, onConnect: (String, String, IpVersion) -> Unit, onCancel: () -> Unit,
+    nativeMaterialVisible: Boolean, reducedMotion: Boolean,
     onInputFocusChange: (Boolean) -> Unit, dismissInput: () -> Unit,
 ) {
     val pager = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
     var selectorDragging by remember { mutableStateOf(false) }
+    var ipVersionDragging by remember { mutableStateOf(false) }
     var code by rememberSaveable { mutableStateOf("") }
-    var host by rememberSaveable { mutableStateOf("") }
+    var ipv4Host by rememberSaveable { mutableStateOf("") }
+    var ipv6Host by rememberSaveable { mutableStateOf("") }
+    var ipv6 by rememberSaveable { mutableStateOf(false) }
     val pending = state.phase == ConnectionPhase.SEARCHING || state.phase == ConnectionPhase.CONNECTING ||
         state.phase == ConnectionPhase.DISCONNECTING
     val manual = pager.settledPage == 1
-    val moving = selectorDragging || pager.isScrollInProgress || pager.currentPageOffsetFraction != 0f
-    val valid = if (manual) Wire.validIpv4(host) else Wire.validCode(code)
+    val pageMoving = selectorDragging || pager.isScrollInProgress || pager.currentPageOffsetFraction != 0f
+    val moving = pageMoving || ipVersionDragging
+    val host = if (ipv6) ipv6Host else ipv4Host
+    val version = if (manual && ipv6) IpVersion.IPV6 else IpVersion.IPV4
+    val valid = if (manual) { if (ipv6) Wire.validIpv6(host) else Wire.validIpv4(host) } else Wire.validCode(code)
     val connect = {
         dismissInput()
         if (enabled && !pending && !moving && valid) {
-            onConnect(if (manual) "" else code, if (manual) host else "")
+            onConnect(if (manual) "" else code, if (manual) host else "", version)
         }
     }
     LaunchedEffect(pager.targetPage) { dismissInput() }
@@ -249,25 +266,53 @@ private fun PairingPanel(
                     pager.requestScrollToPage(page, position - page)
                 }, selectedIndex = pager.settledPage, onDraggingChange = { selectorDragging = it })
             Spacer(Modifier.height(24.dp))
-            HorizontalPager(state = pager, userScrollEnabled = !pending, pageSpacing = 20.dp,
-                modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top,
+            HorizontalPager(state = pager, userScrollEnabled = !pending && !ipVersionDragging, pageSpacing = 20.dp,
+                modifier = Modifier.fillMaxWidth().animateContentSize(tween(if (reducedMotion) 0 else 200,
+                    easing = FastOutSlowInEasing)), verticalAlignment = Alignment.Top,
                 key = { it }) { page ->
                 val isIp = page == 1
                 Column(Modifier.fillMaxWidth()) {
-                    Text(if (isIp) "电脑的 IPv4 地址" else "电脑上的 6 位配对码",
-                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val switchWidth = (112.dp * LocalDensity.current.fontScale).coerceAtMost(maxWidth * .66f)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AnimatedContent(if (!isIp) "电脑上的 6 位配对码" else if (ipv6) "IPv6 地址" else "IPv4 地址",
+                                modifier = Modifier.weight(1f), transitionSpec = {
+                                    (fadeIn(tween(if (reducedMotion) 0 else 150)) togetherWith fadeOut(tween(if (reducedMotion) 0 else 90)))
+                                        .using(SizeTransform { _, _ -> tween(if (reducedMotion) 0 else 180) })
+                                }, label = "IP address family title") { title ->
+                                Text(title, style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (isIp) Box(Modifier.width(switchWidth).semantics {
+                                contentDescription = "IP 版本"
+                                stateDescription = if (ipv6) "IPv6 已开启" else "IPv6 已关闭，使用 IPv4"
+                            }) {
+                                SlidingChoice(listOf("IPv4", "IPv6"), if (ipv6) 1f else 0f,
+                                    enabled = !pending && !pageMoving,
+                                    onSelect = { index -> dismissInput(); ipv6 = index == 1 },
+                                    onInteraction = dismissInput,
+                                    style = SlidingChoiceStyle.Pairing,
+                                    nativeMaterialVisible = nativeMaterialVisible && page == pager.settledPage && !pageMoving,
+                                    onDraggingChange = { ipVersionDragging = it },
+                                    compact = true, reducedMotion = reducedMotion)
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = if (isIp) host else code,
                         onValueChange = { value ->
-                            if (isIp) host = value.filter { it in '0'..'9' || it == '.' }.take(15)
+                            if (isIp && ipv6) ipv6Host = value.filterNot { it.isWhitespace() }.take(128)
+                            else if (isIp) ipv4Host = value.replace(',', '.').replace('，', '.').replace('٫', '.')
+                                .filter { it in '0'..'9' || it == '.' }.take(15)
                             else code = value.filter { it in '0'..'9' }.take(6)
                         },
                         modifier = Modifier.fillMaxWidth().onFocusChanged { onInputFocusChange(it.isFocused) }.semantics {
-                            contentDescription = if (isIp) "电脑的 IPv4 地址" else "6 位配对码"
+                            contentDescription = if (!isIp) "6 位配对码" else if (ipv6) "电脑的 IPv6 地址" else "电脑的 IPv4 地址"
                         },
                         placeholder = {
-                            Text(if (isIp) "192.168.1.100" else "000000", color = MaterialTheme.colorScheme.outline,
+                            Text(if (!isIp) "000000" else if (ipv6) "fd12:3456::10" else "192.168.1.100", color = MaterialTheme.colorScheme.outline,
                                 style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Monospace,
                                     letterSpacing = if (isIp) 0.sp else 5.sp))
                         },
@@ -275,7 +320,8 @@ private fun PairingPanel(
                             fontWeight = FontWeight.Medium, letterSpacing = if (isIp) 0.sp else 5.sp),
                         singleLine = true, enabled = !pending,
                         shape = MaterialTheme.shapes.small,
-                        keyboardOptions = KeyboardOptions(keyboardType = if (isIp) KeyboardType.Decimal else KeyboardType.Number,
+                        keyboardOptions = KeyboardOptions(keyboardType = if (!isIp) KeyboardType.Number else if (ipv6) KeyboardType.Ascii else KeyboardType.Decimal,
+                            autoCorrectEnabled = false,
                             imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { connect() }),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -285,9 +331,15 @@ private fun PairingPanel(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
                         ),
                     )
-                    Text(if (isIp) "在 MineMic PC 中查看，无需配对码。" else "打开 MineMic PC，开启接收后查看。",
-                        Modifier.padding(top = 12.dp, bottom = 24.dp), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AnimatedContent(if (isIp) "输入 IP 直接连接，无需配对码" else "在 MineMic PC 查看 6 位数字配对码",
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp), transitionSpec = {
+                            (fadeIn(tween(if (reducedMotion) 0 else 150)) togetherWith fadeOut(tween(if (reducedMotion) 0 else 90)))
+                                .using(SizeTransform { _, _ -> tween(if (reducedMotion) 0 else 180) })
+                        }, label = "Pairing input guidance") { hint ->
+                        Text(hint, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
+                            textAlign = if (isIp) TextAlign.End else TextAlign.Start,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
             val source = remember { MutableInteractionSource() }
@@ -320,7 +372,7 @@ private fun PairingPanel(
     if (showStatus) {
         Spacer(Modifier.height(14.dp))
         StatusNote(state.message, error = state.phase == ConnectionPhase.ERROR, progress = pending)
-    } else {
+    } else Reveal(!manual, reducedMotion = reducedMotion) {
         Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ToolIcon(Glyph.Network, MaterialTheme.colorScheme.onSurfaceVariant, Modifier.size(16.dp))
@@ -453,7 +505,7 @@ private fun AudioMeter(level: () -> Float, active: Boolean) {
 private fun EnhancementPanel(
     state: MicState, enabled: Boolean, onNoise: (Boolean) -> Unit, onEcho: (Boolean) -> Unit,
     onGain: (Float) -> Unit, onDeskNoise: (Boolean) -> Unit,
-    onInteraction: () -> Unit,
+    onInteraction: () -> Unit, reducedMotion: Boolean,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val gain = state.inputGainDb.takeIf { it.isFinite() }?.coerceIn(0f, 18f)?.roundToInt() ?: 0
@@ -465,7 +517,8 @@ private fun EnhancementPanel(
     DisclosureCard("声音处理", selection, expanded,
         onToggle = { onInteraction(); expanded = !expanded },
         icon = { ToolIcon(Glyph.Noise, MaterialTheme.colorScheme.primary, Modifier.size(20.dp)) },
-        footer = if (state.echoCancellation) ({ ProcessingStatusPanel(state) }) else null) {
+        footer = { ProcessingStatusPanel(state) },
+        footerVisible = state.echoCancellation, footerReducedMotion = reducedMotion) {
         Column {
             GainControl(gain, enabled, onGain)
             HorizontalDivider(Modifier.padding(top = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)

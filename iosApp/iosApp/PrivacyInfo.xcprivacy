@@ -24,10 +24,8 @@
             <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
             <key>NSPrivacyAccessedAPITypeReasons</key>
             <array>
-                <!-- Local UI, network deadlines and audio processing intervals. -->
+                <!-- Local timers/audio intervals; only elapsed session intervals are exchanged with the PC. -->
                 <string>35F9.1</string>
-                <!-- Event timestamps exchanged with the PC for audio clock alignment. -->
-                <string>8FFB.1</string>
             </array>
         </dict>
         <dict>

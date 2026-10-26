@@ -25,15 +25,23 @@ internal object ReferenceAudio {
     }
 }
 
-/** NTP-style four timestamps. Offset is PC minus phone; RTT is not one-way delay. */
-internal class ClockSync {
+/** Wire t1 is session elapsed time; raw phone host timestamps never leave the device. */
+internal class ClockSync(private val originMicros: Long = 0) {
     data class Mapping(val pcMinusPhone: Long, val measuredAt: Long, val roundTripMicros: Long)
     private val samples = ArrayDeque<Mapping>()
-    private val pending = mutableSetOf<Long>()
+    private val pending = mutableMapOf<Long, Long>()
     var mapping: Mapping? = null; private set
-    fun sent(t1: Long) { if (pending.size >= 8) pending.clear(); pending += t1 }
-    fun receive(t1: Long, t2: Long, t3: Long, t4: Long): Boolean {
-        if (!pending.remove(t1) || t4 < t1 || t3 < t2 || t2 < 0 || t3 < 0) return false
+    fun sent(t1: Long): Long? {
+        if (t1 < originMicros) return null
+        val elapsed = t1 - originMicros
+        if (pending.size >= 8) pending.clear()
+        pending[elapsed] = t1
+        return elapsed
+    }
+    /** Restore the matching local t1 before estimating PC-minus-phone offset. */
+    fun receive(elapsed: Long, t2: Long, t3: Long, t4: Long): Boolean {
+        val t1 = pending.remove(elapsed) ?: return false
+        if (t4 < t1 || t3 < t2 || t2 < 0 || t3 < 0) return false
         val rtt = (t4 - t1) - (t3 - t2)
         if (rtt !in 0..80000) return false
         val offset = ((t2 - t1) + (t3 - t4)) / 2

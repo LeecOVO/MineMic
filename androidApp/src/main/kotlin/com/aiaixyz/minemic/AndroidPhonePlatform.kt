@@ -5,6 +5,8 @@ import android.app.*
 import android.content.*
 import android.content.pm.PackageManager
 import android.media.*
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.nsd.*
 import android.os.*
 import androidx.core.content.ContextCompat
@@ -52,8 +54,25 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
                     override fun onResolveFailed(info: NsdServiceInfo, error: Int) { main.post { resolving = false; resolveNext() } }
                     override fun onServiceResolved(info: NsdServiceInfo) { main.post {
                         if (epoch == discoveryEpoch) {
-                            val host = info.host?.hostAddress
-                            if (host != null && Wire.validIpv4(host)) onFound(LanComputer(host, info.port, info.serviceName))
+                            val addresses = if (Build.VERSION.SDK_INT >= 34) info.hostAddresses else listOfNotNull(info.host)
+                            val hosts = addresses.take(16).mapNotNull { address ->
+                                address.hostAddress?.let { host ->
+                                    if (address is Inet6Address && address.scopedInterface != null)
+                                        host.substringBefore('%') + "%" + address.scopedInterface.name else host
+                                }
+                            }.toMutableList()
+                            // Legacy NSD exposes only one A/AAAA result. New PCs
+                            // advertise interface-local IPv6 hints for these OS versions.
+                            if (Build.VERSION.SDK_INT < 34) info.attributes.entries.take(16).forEach { (key, bytes) ->
+                                if (key.matches(Regex("ip6-[0-7]")) && bytes.size <= 64) {
+                                    val host = bytes.toString(Charsets.US_ASCII)
+                                    if (Wire.validIpv6(host)) hosts += host
+                                }
+                            }
+                            hosts.distinct().take(16).forEach { host ->
+                                val normalized = Wire.normalizeIpAddress(host)
+                                if (normalized != null) onFound(LanComputer(normalized, info.port, info.serviceName))
+                            }
                         }
                         resolving = false; resolveNext()
                     } }
@@ -92,7 +111,7 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
                     if (epoch != generation.get()) { socket.close(); return@Thread }
                     tcp = socket
                 }
-                socket.tcpNoDelay = true; socket.connect(InetSocketAddress(host, port), 2500)
+                socket.tcpNoDelay = true; socket.connect(InetSocketAddress(resolveAddress(host), port), 2500)
                 if (epoch != generation.get()) return@Thread
                 onReady()
                 val input = socket.getInputStream(); val line = ByteArrayOutputStream(1024)
@@ -125,7 +144,7 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
         closeAudio()
         val socket = try {
             DatagramSocket().also { value ->
-                try { value.connect(InetAddress.getByName(host), port); value.receiveBufferSize = 32768 }
+                try { value.connect(resolveAddress(host), port); value.receiveBufferSize = 32768 }
                 catch (e: Exception) { value.close(); throw e }
             }
         } catch (e: Exception) { onError(e.message ?: "音频通道打开失败"); return }
@@ -144,6 +163,17 @@ class AndroidPhonePlatform(private val context: Context) : PhonePlatform {
         val socket = udp ?: return
         try { socket.send(DatagramPacket(bytes, bytes.size)) }
         catch (e: Exception) { failAudio(socket, e) }
+    }
+    private fun resolveAddress(host: String): InetAddress {
+        val address = InetAddress.getByName(host)
+        if (address !is Inet6Address || !address.isLinkLocalAddress || '%' in host) return address
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val wifi = connectivity.allNetworks.filter { network ->
+            connectivity.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        }.mapNotNull { connectivity.getLinkProperties(it)?.interfaceName }.distinct()
+        val name = wifi.singleOrNull() ?: error("无法确定 Wi-Fi IPv6 接口，请连接 Wi-Fi 或在地址后附加本机 %接口名")
+        val networkInterface = NetworkInterface.getByName(name) ?: error("Wi-Fi IPv6 接口不可用")
+        return Inet6Address.getByAddress(null, address.address, networkInterface)
     }
     private fun failAudio(socket: DatagramSocket, error: Exception) {
         val callback = synchronized(this) {

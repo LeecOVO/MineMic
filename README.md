@@ -2,12 +2,12 @@
 
 将 Android 手机或 iPhone 变成电脑麦克风，通过局域网传输声音。移动端采用 Kotlin Multiplatform + Compose Multiplatform，配合独立的 [MineMic-PC](https://github.com/LeecOVO/MineMic-PC) 使用。
 
-当前版本：**0.1.0-ea.3 · Early Access**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
+当前版本：**0.1.0-ea.4 · Early Access**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
 
 ## 使用
 
 1. 电脑启动 MineMic-PC，选择输出设备并开始接收。
-2. 手机与电脑连接同一局域网，输入 PC 显示的 **6 位配对码**；也可手动填写 PC 的 IPv4 地址，默认端口为 48721。
+2. 手机与电脑连接同一局域网，输入 PC 显示的 **6 位配对码**；也可手动填写 PC 地址，默认端口为 48721。配对码模式自动选择可用的 IPv4/IPv6 地址。手动地址模式默认 IPv4，也可切换 IPv6；IPv6 需要网络支持，并更新两端客户端。
 3. 首台手机独占连接，其他手机无法抢占。网络中断后保留占用，原手机可自动重连。
 4. 手机或 PC 主动断开后释放占用，配对码保持不变。只有 PC 停止接收或手动更新配对码时才会换码。
 
@@ -73,7 +73,7 @@ tests/native-audio/run-pipeline.sh
 MINEMIC_PC_TEST_SERVER=/path/to/MineMic-PC/build/desktop/minemic_network_tests ./gradlew :shared:jvmTest --rerun-tasks
 ```
 
-未设置该环境变量时，互通项跳过。协议见 [PC 协议文档](https://github.com/LeecOVO/MineMic-PC/blob/v0.1.0-ea.1/docs/PROTOCOL.md)。自动测试不能代替真机音频、后台运行和网络测试。
+未设置该环境变量时，互通项跳过。协议见 [PC 协议文档](https://github.com/LeecOVO/MineMic-PC/blob/v0.1.0-ea.8/docs/PROTOCOL.md)。自动测试不能代替真机音频、后台运行和网络测试。
 
 ## iOS 发布包
 

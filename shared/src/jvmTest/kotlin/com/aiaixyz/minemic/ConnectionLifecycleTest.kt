@@ -7,6 +7,18 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.*
 
 class ConnectionLifecycleTest {
+    @Test fun ipv6RecoveryUsesCanonicalAddressAndKeepsInterfaceScope() {
+        val platform = Platform()
+        val leases = ConnectionLeases(platform)
+        leases.remember(ConnectionLeases.Lease("[FD12::000a]", 48721, "a".repeat(32), "b".repeat(32), "c".repeat(32)))
+        val restored = ConnectionLeases(platform)
+        assertNotNull(restored.find(LanComputer("fd12:0:0:0:0:0:0:a", 48721, "PC")))
+        restored.remember(ConnectionLeases.Lease("fe80::1%en0", 48721, "a".repeat(32), "b".repeat(32), "c".repeat(32)))
+        assertNotNull(ConnectionLeases(platform).find(LanComputer("fe80::1%en0", 48721, "PC")))
+        assertNull(ConnectionLeases(platform).find(LanComputer("fe80::1%en1", 48721, "other link")))
+        restored.forget(LanComputer("FD12::A", 48721, "PC"))
+        assertNull(ConnectionLeases(platform).find(LanComputer("fd12::a", 48721, "PC")))
+    }
     private class Platform : PhonePlatform {
         private var savedConnection: String? = null
         override fun loadConnectionState() = savedConnection
@@ -19,6 +31,10 @@ class ConnectionLifecycleTest {
         @Volatile var recording = false
         @Volatile var connected = false
         @Volatile var audio = false
+        @Volatile var controlHost = ""
+        @Volatile var audioHost = ""
+        var discoveredHosts = listOf("127.0.0.1")
+        var unavailableHosts = emptySet<String>()
         @Volatile var line: ((String) -> Unit)? = null
         @Volatile var closed: (() -> Unit)? = null
         private var ownerInstance = ""
@@ -28,10 +44,14 @@ class ConnectionLifecycleTest {
         override fun deviceName() = "Test phone"
         override fun randomBytes(count: Int) = randomSequence.getAndIncrement().let { value -> ByteArray(count) { value.toByte() } }
         override fun hmac(body: ByteArray, key: ByteArray) = ByteArray(32)
-        override fun discover(onFound: (LanComputer) -> Unit, onError: (String) -> Unit) = onFound(LanComputer("127.0.0.1", 48721, "Test PC"))
+        override fun discover(onFound: (LanComputer) -> Unit, onError: (String) -> Unit) {
+            discoveredHosts.forEach { onFound(LanComputer(it, 48721, "Test PC")) }
+        }
         override fun stopDiscovery() {}
         override fun openControl(host: String, port: Int, onReady: () -> Unit, onLine: (String) -> Unit, onClosed: () -> Unit, onError: (String) -> Unit) {
-            opens.incrementAndGet(); connected = true; line = onLine; closed = onClosed; onReady()
+            opens.incrementAndGet(); controlHost = host
+            if (host in unavailableHosts) { onError("unavailable"); return }
+            connected = true; line = onLine; closed = onClosed; onReady()
         }
         fun reply(fields: Map<String, String>) { line?.invoke(ControlJson.encode(fields)) }
         override fun sendControl(line: String) {
@@ -53,7 +73,7 @@ class ConnectionLifecycleTest {
             }
         }
         override fun closeControl() { connected = false }
-        override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit, onError: (String) -> Unit) { audio = true }
+        override fun openAudio(host: String, port: Int, onReference: (ByteArray) -> Unit, onError: (String) -> Unit) { audioHost = host; audio = true }
         override fun sendAudio(bytes: ByteArray) {}
         override fun closeAudio() { audio = false }
         override fun startAudio(onFrame: (CapturedAudio) -> Unit, onError: (String) -> Unit, onState: (Boolean, String) -> Unit) { recording = true; onState(true, "capturing") }
@@ -61,6 +81,46 @@ class ConnectionLifecycleTest {
     }
     private suspend fun waitFor(condition: () -> Boolean) = withTimeout(6000) { while (!condition()) delay(5) }
     private suspend fun connect(phone: MicController) { phone.connect("", "127.0.0.1"); waitFor { phone.state.value.phase == ConnectionPhase.CONNECTED && phone.state.value.recording } }
+
+    @Test fun manualIpv6UsesCanonicalHostForControlAudioAndRelease() = runBlocking {
+        val platform = Platform(); val phone = MicController(platform)
+        try {
+            phone.connect("", "[FD12::000a]", IpVersion.IPV6)
+            waitFor { phone.state.value.recording && platform.audio }
+            assertEquals("fd12:0:0:0:0:0:0:a", platform.controlHost)
+            assertEquals(platform.controlHost, platform.audioHost)
+            assertEquals("manual", platform.requests.first()["mode"])
+            phone.disconnect(); waitFor { phone.state.value.phase == ConnectionPhase.IDLE && !platform.owner }
+            assertNull(platform.loadConnectionState())
+        } finally { phone.close() }
+    }
+    @Test fun wrongAddressFamilyIsRejectedBeforeOpeningTransport() = runBlocking {
+        val platform = Platform(); val phone = MicController(platform)
+        try {
+            phone.connect("", "::1")
+            waitFor { phone.state.value.phase == ConnectionPhase.ERROR }
+            assertTrue(phone.state.value.message.contains("IPv4")); assertEquals(0, platform.opens.get())
+            phone.connect("", "192.168.1.2", IpVersion.IPV6)
+            waitFor { phone.state.value.message.contains("IPv6") }
+            assertEquals(0, platform.opens.get())
+        } finally { phone.close() }
+    }
+    @Test fun codePairingAutomaticallyTriesBothAddressFamilies() = runBlocking {
+        for ((first, second) in listOf("127.0.0.1" to "0:0:0:0:0:0:0:1", "0:0:0:0:0:0:0:1" to "127.0.0.1")) {
+            val platform = Platform().apply {
+                discoveredHosts = listOf("not-an-ip", first, second)
+                unavailableHosts = setOf(first)
+            }
+            val phone = MicController(platform)
+            try {
+                phone.connect("123456", "")
+                waitFor { phone.state.value.recording }
+                assertEquals(second, platform.controlHost)
+                assertEquals(2, platform.opens.get(), "unreachable family must not prevent trying the other")
+                assertEquals("code", platform.requests.first()["mode"])
+            } finally { phone.close() }
+        }
+    }
 
     @Test fun explicitDisconnectIsImmediateAndTimeoutDoesNotReturnToReconnecting() = runBlocking {
         val platform = Platform(); val phone = MicController(platform)

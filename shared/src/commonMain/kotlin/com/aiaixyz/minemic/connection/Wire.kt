@@ -1,11 +1,60 @@
 package com.aiaixyz.minemic.connection
 
+enum class IpVersion {
+    IPV4, IPV6;
+    fun accepts(host: String) = if (this == IPV4) Wire.validIpv4(host) else Wire.validIpv6(host)
+}
+
 object Wire {
     const val PORT = 48721
     fun validCode(code: String) = code.length == 6 && code.all { it in '0'..'9' }
     fun validIpv4(host: String): Boolean {
         val parts = host.split('.')
         return parts.size == 4 && parts.all { it.isNotEmpty() && it.length <= 3 && it.all { c -> c in '0'..'9' } && (it.toIntOrNull() ?: -1) in 0..255 }
+    }
+    fun validIpv6(host: String) = ipv6Groups(host) != null
+    fun validIpAddress(host: String) = validIpv4(host) || validIpv6(host)
+
+    /** Numeric literals only: no DNS, URLs or ports. Scope belongs to the phone's interface. */
+    fun normalizeIpAddress(host: String): String? {
+        val value = host.trim()
+        if (validIpv4(value)) return value.split('.').joinToString(".") { it.toInt().toString() }
+        val groups = ipv6Groups(value) ?: return null
+        val literal = value.removeSurrounding("[", "]")
+        val scope = literal.substringAfter('%', "")
+        return groups.joinToString(":") { it.toString(16) } + if (scope.isEmpty()) "" else "%$scope"
+    }
+
+    private fun ipv6Groups(host: String): List<Int>? {
+        if (host.length !in 2..128) return null
+        val literal = if (host.startsWith('[') && host.endsWith(']')) host.substring(1, host.length - 1) else host
+        if (literal.count { it == '%' } > 1) return null
+        val scope = literal.substringAfter('%', "")
+        if ('%' in literal && (scope.isEmpty() || scope.length > 32 || scope.any {
+                it !in 'a'..'z' && it !in 'A'..'Z' && it !in '0'..'9' && it !in "_.-"
+            })) return null
+        var address = literal.substringBefore('%')
+        if ('.' in address) {
+            val tail = address.substringAfterLast(':')
+            if (!validIpv4(tail)) return null
+            val bytes = tail.split('.').map { it.toInt() }
+            address = address.substringBeforeLast(':') + ":" + ((bytes[0] shl 8) or bytes[1]).toString(16) +
+                ":" + ((bytes[2] shl 8) or bytes[3]).toString(16)
+        }
+        if (address.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' && it != ':' }) return null
+        val compressed = address.indexOf("::")
+        if (compressed >= 0 && address.indexOf("::", compressed + 2) >= 0) return null
+        fun groups(part: String): List<Int>? {
+            if (part.isEmpty()) return emptyList()
+            val pieces = part.split(':')
+            if (pieces.any { it.isEmpty() || it.length > 4 }) return null
+            return pieces.map { it.toIntOrNull(16) ?: return null }
+        }
+        if (compressed < 0) return groups(address)?.takeIf { it.size == 8 }
+        val left = groups(address.substring(0, compressed)) ?: return null
+        val right = groups(address.substring(compressed + 2)) ?: return null
+        if (left.size + right.size >= 8) return null
+        return left + List(8 - left.size - right.size) { 0 } + right
     }
     fun hex(bytes: ByteArray) = bytes.joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
     fun unhex(value: String): ByteArray {

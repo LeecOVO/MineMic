@@ -68,13 +68,9 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
     }
     func netServiceDidResolveAddress(_ sender: NetService) {
         guard services.contains(where: { $0 === sender }), sender.port > 0 else { return }
-        for address in sender.addresses ?? [] {
-            address.withUnsafeBytes { raw in
-                guard let pointer = raw.baseAddress?.assumingMemoryBound(to: sockaddr.self), pointer.pointee.sa_family == sa_family_t(AF_INET) else { return }
-                var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                if getnameinfo(pointer, socklen_t(address.count), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
-                    _ = found?(LanComputer(host: String(cString: host), port: Int32(sender.port), name: sender.name))
-                }
+        for address in (sender.addresses ?? []).prefix(16) {
+            if let host = IOSNetworkAddress.numericHost(address) {
+                _ = found?(LanComputer(host: host, port: Int32(sender.port), name: sender.name))
             }
         }
     }
@@ -85,7 +81,10 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
             self.control?.cancel(); self.pending.removeAll(keepingCapacity: true)
             let tcp = NWProtocolTCP.Options()
             tcp.noDelay = true
-            let connection = NWConnection(host: .init(host), port: NWEndpoint.Port(rawValue: UInt16(port))!,
+            let endpoint: NWEndpoint.Host
+            do { endpoint = try IOSNetworkAddress.host(host) }
+            catch { _ = onError(error.localizedDescription); return }
+            let connection = NWConnection(host: endpoint, port: NWEndpoint.Port(rawValue: UInt16(port))!,
                                           using: NWParameters(tls: nil, tcp: tcp))
             self.control = connection
             connection.stateUpdateHandler = { [weak self, weak connection] state in
@@ -146,7 +145,10 @@ final class IOSPhonePlatform: NSObject, PhonePlatform, NetServiceBrowserDelegate
         #endif
         let parameters = NWParameters.udp
         parameters.serviceClass = .interactiveVoice
-        let connection = NWConnection(host: .init(host), port: NWEndpoint.Port(rawValue: UInt16(port))!, using: parameters)
+        let endpoint: NWEndpoint.Host
+        do { endpoint = try IOSNetworkAddress.host(host) }
+        catch { _ = onError(error.localizedDescription); return }
+        let connection = NWConnection(host: endpoint, port: NWEndpoint.Port(rawValue: UInt16(port))!, using: parameters)
         self.audio = connection; self.audioFailure = onError
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, let connection else { return }
