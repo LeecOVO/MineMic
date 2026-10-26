@@ -113,8 +113,17 @@ final class MineMicScreenshots: XCTestCase {
         // Compose exposes its custom slider as an adjustable Other element on iOS.
         let gain = app.otherElements.matching(NSPredicate(format: "label == %@", "收音增强")).firstMatch
         reveal(gain)
-        gain.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
-            .press(forDuration: 0.1, thenDragTo: gain.coordinate(withNormalizedOffset: CGVector(dx: 1.0 / 3.0, dy: 0.5)))
+        // A partially clipped Compose element can report hittable on a phone.
+        // Bring the whole track into the viewport before setting its position.
+        for _ in 0..<6 {
+            let distance = gain.frame.midY - app.frame.midY
+            if abs(distance) < app.frame.height * 0.12 { break }
+            let fraction = min(abs(distance) / app.frame.height, 0.32)
+            if distance > 0 { drag(from: 0.75, to: 0.75 - fraction) }
+            else { drag(from: 0.3, to: 0.3 + fraction) }
+        }
+        XCTAssertTrue(gain.frame.midY > app.frame.minY + 100 && gain.frame.midY < app.frame.maxY - 100)
+        gain.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)).tap()
         settle()
         XCTAssertTrue(audioHeader().label.contains("收音 +"), "Input gain must be enabled in the screenshot")
         tap(toggle("降噪"))
