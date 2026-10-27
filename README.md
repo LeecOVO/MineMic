@@ -2,7 +2,7 @@
 
 将 Android 手机或 iPhone 变成电脑麦克风，通过局域网传输声音。移动端采用 Kotlin Multiplatform + Compose Multiplatform，配合独立的 [MineMic-PC](https://github.com/LeecOVO/MineMic-PC) 使用。
 
-当前版本：**0.1.0-ea.5 · Early Access**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
+当前版本：**0.1.0-ea.6 · Early Access**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
 
 ## 使用
 
