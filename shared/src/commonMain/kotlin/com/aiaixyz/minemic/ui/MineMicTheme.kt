@@ -5,6 +5,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 
 private val LightColors = lightColorScheme(
@@ -39,6 +40,11 @@ private val DarkColors = darkColorScheme(
     error = Color(0xFFFFB4A6), onError = Color(0xFF5F160B),
     errorContainer = Color(0xFF4A2922), onErrorContainer = Color(0xFFFFC7BC),
 )
+
+/** Stronger boundaries for interactive fields and tracks, independent of decorative dividers. */
+internal val controlBoundaryColor: Color
+    @Composable get() = if (MaterialTheme.colorScheme.background.luminance() < .3f)
+        Color(0xFF737F7D) else Color(0xFF7F8C89)
 
 @Composable
 fun MineMicTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {

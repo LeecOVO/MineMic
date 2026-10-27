@@ -1,6 +1,8 @@
 package com.aiaixyz.minemic.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -38,9 +40,10 @@ internal fun PageMotion(
     content: @Composable () -> Unit,
 ) {
     val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
+    val reducedMotion = LocalReducedMotion.current
     AnimatedVisibility(state,
-        enter = slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { direction * it },
-        exit = slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { direction * it },
+        enter = if (reducedMotion) fadeIn(tween(120)) else slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { direction * it },
+        exit = if (reducedMotion) fadeOut(tween(90)) else slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { direction * it },
         modifier = Modifier.fillMaxSize(),
     ) {
         val inactive = !state.targetState || covered

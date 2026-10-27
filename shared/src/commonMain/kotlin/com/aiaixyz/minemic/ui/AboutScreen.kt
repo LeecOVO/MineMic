@@ -29,6 +29,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -68,15 +69,27 @@ internal fun AboutScreen(
                     verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     Surface(color = colors.surface, shape = MaterialTheme.shapes.large) {
                         Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            val largeText = LocalDensity.current.fontScale >= 1.5f
+                            val identity: @Composable () -> Unit = {
+                                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                    val style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
+                                    val brand = if (textWidth("MineMic", style) > maxWidth) "Mine\nMic" else "MineMic"
+                                    Text(brand, style = style, modifier = Modifier.semantics {
+                                        heading()
+                                        contentDescription = "MineMic"
+                                    })
+                                }
+                                Text("把手机变成电脑麦克风", style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant)
+                            }
+                            if (largeText) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                identity()
+                            } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Surface(color = colors.primaryContainer, shape = MaterialTheme.shapes.medium) {
                                     Box(Modifier.size(60.dp), contentAlignment = Alignment.Center) { mark() }
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    Text("MineMic", style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
-                                    Text("把手机变成电脑麦克风", style = MaterialTheme.typography.bodySmall,
-                                        color = colors.onSurfaceVariant)
+                                    identity()
                                 }
                             }
                             HorizontalDivider(Modifier.padding(vertical = 18.dp), color = colors.outlineVariant)
@@ -126,11 +139,12 @@ private fun AboutRow(title: String, detail: String, glyph: AboutGlyph, external:
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val haptic = LocalHapticFeedback.current
+    val reducedMotion = LocalReducedMotion.current
     val colors = MaterialTheme.colorScheme
     val fill by animateColorAsState(
         if (pressed) colors.onSurface.copy(alpha = .06f) else colors.onSurface.copy(alpha = 0f),
         tween(if (pressed) 80 else 180))
-    val arrowOffset by animateDpAsState(if (pressed) 3.dp else 0.dp, tween(if (pressed) 100 else 180))
+    val arrowOffset by animateDpAsState(if (pressed && !reducedMotion) 3.dp else 0.dp, tween(if (reducedMotion) 0 else if (pressed) 100 else 180))
     Row(Modifier.fillMaxWidth().pressFeedback(interaction, 16.dp)
         .clip(MaterialTheme.shapes.medium).background(fill)
         .clickable(role = Role.Button, interactionSource = interaction, indication = null,
@@ -139,8 +153,9 @@ private fun AboutRow(title: String, detail: String, glyph: AboutGlyph, external:
             onClick()
         }.heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        AboutIcon(glyph, Modifier.size(24.dp), accent = true)
-        Column(Modifier.weight(1f).padding(start = 24.dp, end = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        val largeText = LocalDensity.current.fontScale >= 1.5f
+        if (!largeText) AboutIcon(glyph, Modifier.size(24.dp), accent = true)
+        Column(Modifier.weight(1f).padding(start = if (largeText) 0.dp else 24.dp, end = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

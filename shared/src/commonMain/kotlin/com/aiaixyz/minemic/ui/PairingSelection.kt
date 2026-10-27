@@ -9,5 +9,5 @@ internal expect val usesSystemPairingAppearance: Boolean
 @Composable
 internal expect fun PlatformPairingSelection(
     labels: List<String>, position: Float, enabled: Boolean, engaged: Boolean, rtl: Boolean, compact: Boolean,
-    modifier: Modifier,
+    modifier: Modifier, reducedMotion: Boolean,
 ): Boolean

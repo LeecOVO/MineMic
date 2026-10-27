@@ -8,5 +8,5 @@ internal actual val usesSystemPairingAppearance: Boolean = false
 @Composable
 internal actual fun PlatformPairingSelection(
     labels: List<String>, position: Float, enabled: Boolean, engaged: Boolean, rtl: Boolean, compact: Boolean,
-    modifier: Modifier,
+    modifier: Modifier, reducedMotion: Boolean,
 ): Boolean = false

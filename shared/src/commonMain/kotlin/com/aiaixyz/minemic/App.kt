@@ -11,6 +11,9 @@ import com.aiaixyz.minemic.ui.MineMicTheme
 import com.aiaixyz.minemic.ui.AppearanceSettings
 import com.aiaixyz.minemic.ui.PlatformAppearance
 import com.aiaixyz.minemic.ui.rememberAppearanceSettings
+import com.aiaixyz.minemic.ui.MotionSettings
+import com.aiaixyz.minemic.ui.rememberMotionSettings
+import com.aiaixyz.minemic.ui.rememberReducedMotion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import minemic.shared.generated.resources.Res
@@ -29,8 +32,11 @@ fun App(
     lockScreenControls: LockScreenControls?,
     appearanceSettings: AppearanceSettings? = null,
     onConnectWithIpVersion: ((String, String, IpVersion) -> Unit)? = null,
+    motionSettings: MotionSettings? = null,
 ) {
     val appearance = appearanceSettings ?: rememberAppearanceSettings()
+    val motion = motionSettings ?: rememberMotionSettings()
+    val systemReducedMotion = rememberReducedMotion()
     val dark = appearance.mode.isDark(isSystemInDarkTheme())
     PlatformAppearance(appearance.mode, dark)
     val observedState = controller?.state?.collectAsState()
@@ -55,6 +61,10 @@ fun App(
             audioLevel = audioLevel,
             themeMode = appearance.mode,
             onThemeModeChange = appearance::select,
+            reducedMotion = motion.isReduced(systemReducedMotion),
+            manualReducedMotion = motion.enabled,
+            systemReducedMotion = systemReducedMotion,
+            onReducedMotionChange = motion::select,
             controlsEnabled = controller != null,
             connectEnabled = controller != null || onConnect != null || onConnectWithIpVersion != null,
             onConnect = { code, host -> (onConnect ?: { c, ip -> controller?.connect(c, ip) })(code, host) },

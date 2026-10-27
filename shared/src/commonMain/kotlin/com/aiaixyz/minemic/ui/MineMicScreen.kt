@@ -48,12 +48,15 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aiaixyz.minemic.AppVersion
@@ -90,132 +93,176 @@ fun MineMicScreen(
     licenseText: String? = null,
     licenseError: Boolean = false,
     onConnectWithIpVersion: ((String, String, IpVersion) -> Unit)? = null,
-    reducedMotion: Boolean = rememberReducedMotion(),
+    reducedMotion: Boolean = LocalReducedMotion.current,
+    manualReducedMotion: Boolean = false,
+    systemReducedMotion: Boolean = false,
+    onReducedMotionChange: (Boolean) -> Unit = {},
 ) {
-    var settingsOpen by rememberSaveable { mutableStateOf(false) }
-    SettingsBackHandler(settingsOpen) { settingsOpen = false }
-    var about by remember { mutableStateOf(false) }
-    var privacyDocument by remember { mutableStateOf<PrivacyDocument?>(null) }
-    var privacyOpen by remember { mutableStateOf(false) }
-    var licensesOpen by remember { mutableStateOf(false) }
-    val closePrivacy = { privacyOpen = false }
-    val settingsMotion = rememberPageMotion(settingsOpen)
-    val aboutMotion = rememberPageMotion(about)
-    val privacyMotion = rememberPageMotion(privacyOpen)
-    val licensesMotion = rememberPageMotion(licensesOpen)
-    val pageCoversHome = settingsMotion.coversContent || aboutMotion.coversContent || privacyMotion.coversContent || licensesMotion.coversContent
-    SettingsBackHandler(about && !privacyOpen && !licensesOpen) { about = false }
-    SettingsBackHandler(privacyOpen, closePrivacy)
-    var help by remember { mutableStateOf(false) }
-    var inputFocused by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    val dismissInput = {
-        focusManager.clearFocus(force = true)
-        keyboard?.hide()
-        Unit
-    }
-    val uriHandler = LocalUriHandler.current
-    Surface(Modifier.fillMaxSize().pointerInput(focusManager, keyboard) {
-        detectTapGestures(onTap = { dismissInput() })
-    }, color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.safeDrawingPadding().imePadding()
-            .then(if (pageCoversHome) Modifier.clearAndSetSemantics {} else Modifier), contentAlignment = Alignment.TopCenter) {
-            Column(
-                Modifier.widthIn(max = 560.dp).fillMaxSize(),
-            ) {
-                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
-                    Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        WaveMark(Modifier.size(30.dp), MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(10.dp))
-                        Text("MineMic", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.6).sp, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { dismissInput(); settingsOpen = true }, modifier = Modifier.semantics { contentDescription = "设置" }) {
-                            ToolIcon(Glyph.Settings, MaterialTheme.colorScheme.onSurfaceVariant)
+    CompositionLocalProvider(LocalReducedMotion provides reducedMotion) {
+        var settingsOpen by rememberSaveable { mutableStateOf(false) }
+        SettingsBackHandler(settingsOpen) { settingsOpen = false }
+        var about by remember { mutableStateOf(false) }
+        var privacyDocument by remember { mutableStateOf<PrivacyDocument?>(null) }
+        var privacyOpen by remember { mutableStateOf(false) }
+        var licensesOpen by remember { mutableStateOf(false) }
+        val closePrivacy = { privacyOpen = false }
+        val settingsMotion = rememberPageMotion(settingsOpen)
+        val aboutMotion = rememberPageMotion(about)
+        val privacyMotion = rememberPageMotion(privacyOpen)
+        val licensesMotion = rememberPageMotion(licensesOpen)
+        val pageCoversHome = settingsMotion.coversContent || aboutMotion.coversContent || privacyMotion.coversContent || licensesMotion.coversContent
+        SettingsBackHandler(about && !privacyOpen && !licensesOpen) { about = false }
+        SettingsBackHandler(privacyOpen, closePrivacy)
+        var help by remember { mutableStateOf(false) }
+        var inputFocused by remember { mutableStateOf(false) }
+        val focusManager = LocalFocusManager.current
+        val keyboard = LocalSoftwareKeyboardController.current
+        val dismissInput = {
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
+            Unit
+        }
+        val uriHandler = LocalUriHandler.current
+        Surface(Modifier.fillMaxSize().pointerInput(focusManager, keyboard) {
+            detectTapGestures(onTap = { dismissInput() })
+        }, color = MaterialTheme.colorScheme.background) {
+            Box(Modifier.safeDrawingPadding().imePadding()
+                .then(if (pageCoversHome) Modifier.clearAndSetSemantics {} else Modifier), contentAlignment = Alignment.TopCenter) {
+                Column(
+                    Modifier.widthIn(max = 560.dp).fillMaxSize(),
+                ) {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+                        HomeHeader(onSettings = { dismissInput(); settingsOpen = true },
+                            onAbout = { dismissInput(); about = true })
+                        if (state.ownsPc) {
+                            SessionPanel(state, controlsEnabled, onMutedChange, onRetryMicrophone, onDisconnect, audioLevel)
+                        } else {
+                            PairingPanel(state, connectEnabled,
+                                onConnect = { code, host, version ->
+                                    if (onConnectWithIpVersion != null) onConnectWithIpVersion(code, host, version)
+                                    else onConnect(code, host)
+                                }, onCancel = onDisconnect,
+                                reducedMotion = reducedMotion,
+                                nativeMaterialVisible = nativeMaterialVisible && !pageCoversHome && !help,
+                                onInputFocusChange = { inputFocused = it }, dismissInput = dismissInput)
                         }
-                        IconButton(onClick = { dismissInput(); about = true }, modifier = Modifier.semantics { contentDescription = "关于 MineMic" }) {
-                            ToolIcon(Glyph.Info, MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    if (state.ownsPc) {
-                        SessionPanel(state, controlsEnabled, onMutedChange, onRetryMicrophone, onDisconnect, audioLevel)
-                    } else {
-                        PairingPanel(state, connectEnabled,
-                            onConnect = { code, host, version ->
-                                if (onConnectWithIpVersion != null) onConnectWithIpVersion(code, host, version)
-                                else onConnect(code, host)
-                            }, onCancel = onDisconnect,
+                        Spacer(Modifier.height(20.dp))
+                        EnhancementPanel(state, controlsEnabled,
                             reducedMotion = reducedMotion,
-                            nativeMaterialVisible = nativeMaterialVisible && !pageCoversHome && !help,
-                            onInputFocusChange = { inputFocused = it }, dismissInput = dismissInput)
+                            onNoise = { dismissInput(); onNoiseSuppressionChange(it) },
+                            onEcho = { dismissInput(); onEchoCancellationChange(it) },
+                            onGain = { dismissInput(); onInputGainChange(it) },
+                            onDeskNoise = { dismissInput(); onDeskNoiseSuppressionChange(it) },
+                            onInteraction = dismissInput)
+                        lockScreenState?.let { lockState ->
+                            Spacer(Modifier.height(12.dp))
+                            LockScreenPanel(lockState, onInteraction = dismissInput,
+                                onChange = { dismissInput(); onLockScreenControlsChange(it) })
+                        }
+                        BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp)) {
+                            val version: @Composable () -> Unit = {
+                                Text(AppVersion.name, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            val helpButton: @Composable () -> Unit = {
+                                TextButton(onClick = { dismissInput(); help = true }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                                    Text("连接帮助", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                            if (maxWidth / LocalDensity.current.fontScale < 180.dp) {
+                                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    version()
+                                    Box(Modifier.align(Alignment.End)) { helpButton() }
+                                }
+                            } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.weight(1f)) { version() }
+                                helpButton()
+                            }
+                        }
                     }
-                    Spacer(Modifier.height(20.dp))
-                    EnhancementPanel(state, controlsEnabled,
-                        reducedMotion = reducedMotion,
-                        onNoise = { dismissInput(); onNoiseSuppressionChange(it) },
-                        onEcho = { dismissInput(); onEchoCancellationChange(it) },
-                        onGain = { dismissInput(); onInputGainChange(it) },
-                        onDeskNoise = { dismissInput(); onDeskNoiseSuppressionChange(it) },
-                        onInteraction = dismissInput)
-                    lockScreenState?.let { lockState ->
-                        Spacer(Modifier.height(12.dp))
-                        LockScreenPanel(lockState, onInteraction = dismissInput,
-                            onChange = { dismissInput(); onLockScreenControlsChange(it) })
-                    }
-                    Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("${AppVersion.name}", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { dismissInput(); help = true }, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                            Text("连接帮助", style = MaterialTheme.typography.labelMedium)
+                    // Number pads on iOS have no IME action key. Keep a completion action
+                    // outside the scrolling form so it stays immediately above the keyboard.
+                    if (inputFocused && !state.ownsPc) Surface(color = MaterialTheme.colorScheme.surface) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = dismissInput) { Text("完成", fontWeight = FontWeight.SemiBold) }
                         }
                     }
                 }
-                // Number pads on iOS have no IME action key. Keep a completion action
-                // outside the scrolling form so it stays immediately above the keyboard.
-                if (inputFocused && !state.ownsPc) Surface(color = MaterialTheme.colorScheme.surface) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = dismissInput) { Text("完成", fontWeight = FontWeight.SemiBold) }
+                if (pageCoversHome) Box(Modifier.matchParentSize().blockPageInput())
+            }
+            PageMotion(aboutMotion, covered = privacyMotion.coversContent || licensesMotion.coversContent) {
+                AboutScreen(
+                    active = about && !privacyMotion.coversContent && !licensesMotion.coversContent,
+                    onBack = { about = false },
+                    onProject = { uriHandler.openUri("https://github.com/LeecOVO/MineMic") },
+                    onPrivacyDocument = { document -> privacyDocument = document; privacyOpen = true },
+                    onLicenses = { licensesOpen = true; onShowLicenses() },
+                    mark = { WaveMark(Modifier.size(32.dp), MaterialTheme.colorScheme.primary) },
+                )
+            }
+            if (help) AlertDialog(
+                onDismissRequest = { help = false }, title = { Text("连接帮助") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        HelpItem("连接前", "手机和电脑需在同一局域网。打开 MineMic PC 并开启接收，再输入电脑上的配对码。找不到电脑时，可以切换到 IP 地址。")
+                        HelpItem("连接后", "一台电脑同时由一台手机独占。网络中断时会保留占用，并尝试连接原电脑。")
+                        HelpItem("结束使用", "点击「断开连接」释放占用。配对码仅在电脑停止接收或手动更新时改变。若网络中断，请重试断开，或在电脑端手动断开。")
+                        HelpItem("回声抑制", "新版 Windows PC 默认跟随系统外放设备；若游戏单独指定了输出设备，可在 PC 的“外放参考”中选择。参考暂不可用时，麦克风仍会继续传输。")
                     }
-                }
-            }
-            if (pageCoversHome) Box(Modifier.matchParentSize().blockPageInput())
-        }
-        PageMotion(aboutMotion, covered = privacyMotion.coversContent || licensesMotion.coversContent) {
-            AboutScreen(
-                active = about && !privacyMotion.coversContent && !licensesMotion.coversContent,
-                onBack = { about = false },
-                onProject = { uriHandler.openUri("https://github.com/LeecOVO/MineMic") },
-                onPrivacyDocument = { document -> privacyDocument = document; privacyOpen = true },
-                onLicenses = { licensesOpen = true; onShowLicenses() },
-                mark = { WaveMark(Modifier.size(32.dp), MaterialTheme.colorScheme.primary) },
+                },
+                confirmButton = { TextButton(onClick = { help = false }) { Text("知道了") } },
             )
-        }
-        if (help) AlertDialog(
-            onDismissRequest = { help = false }, title = { Text("连接帮助") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    HelpItem("连接前", "手机和电脑需在同一局域网。打开 MineMic PC 并开启接收，再输入电脑上的配对码。找不到电脑时，可以切换到 IP 地址。")
-                    HelpItem("连接后", "一台电脑同时由一台手机独占。网络中断时会保留占用，并尝试连接原电脑。")
-                    HelpItem("结束使用", "点击「断开连接」释放占用。配对码仅在电脑停止接收或手动更新时改变。若网络中断，请重试断开，或在电脑端手动断开。")
-                    HelpItem("回声抑制", "新版 Windows PC 默认跟随系统外放设备；若游戏单独指定了输出设备，可在 PC 的“外放参考”中选择。参考暂不可用时，麦克风仍会继续传输。")
+            PageMotion(settingsMotion) {
+                SettingsScreen(themeMode, onThemeModeChange,
+                    manualReducedMotion = manualReducedMotion, systemReducedMotion = systemReducedMotion,
+                    onReducedMotionChange = onReducedMotionChange) { settingsOpen = false }
+            }
+            PageMotion(privacyMotion) {
+                privacyDocument?.let { document ->
+                    PrivacyScreen(document, onBack = closePrivacy,
+                        onContact = { uriHandler.openUri(PRIVACY_CONTACT_URL) })
                 }
-            },
-            confirmButton = { TextButton(onClick = { help = false }) { Text("知道了") } },
-        )
-        PageMotion(settingsMotion) {
-            SettingsScreen(themeMode, onThemeModeChange) { settingsOpen = false }
-        }
-        PageMotion(privacyMotion) {
-            privacyDocument?.let { document ->
-                PrivacyScreen(document, onBack = closePrivacy,
-                    onContact = { uriHandler.openUri(PRIVACY_CONTACT_URL) })
+            }
+            PageMotion(licensesMotion) {
+                LicensesScreen(licenseText, licenseError, active = licensesOpen,
+                    onBack = { licensesOpen = false }, onRetry = onShowLicenses)
             }
         }
-        PageMotion(licensesMotion) {
-            LicensesScreen(licenseText, licenseError, active = licensesOpen,
-                onBack = { licensesOpen = false }, onRetry = onShowLicenses)
+    }
+}
+
+@Composable
+private fun HomeHeader(onSettings: () -> Unit, onAbout: () -> Unit) {
+    val style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp)
+    val brandWidth = textWidth("MineMic", style)
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp)) {
+        val wrapBrand = brandWidth > maxWidth
+        if (brandWidth + 136.dp <= maxWidth) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                WaveMark(Modifier.size(30.dp), MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(10.dp))
+                Text("MineMic", style = style, modifier = Modifier.weight(1f))
+                HomeHeaderActions(onSettings, onAbout)
+            }
+        } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (wrapBrand) "Mine\nMic" else "MineMic", style = style)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                WaveMark(Modifier.size(30.dp), MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.weight(1f))
+                HomeHeaderActions(onSettings, onAbout)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeHeaderActions(onSettings: () -> Unit, onAbout: () -> Unit) {
+    Row {
+        IconButton(onClick = onSettings, modifier = Modifier.semantics { contentDescription = "设置" }) {
+            ToolIcon(Glyph.Settings, MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick = onAbout, modifier = Modifier.semantics { contentDescription = "关于 MineMic" }) {
+            ToolIcon(Glyph.Info, MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -249,8 +296,10 @@ private fun PairingPanel(
         }
     }
     LaunchedEffect(pager.targetPage) { dismissInput() }
-    Text("连接电脑", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.8).sp)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.8).sp)
+        Text(if (textWidth("连接电脑", style) > maxWidth) "连接\n电脑" else "连接电脑", style = style)
+    }
     Text("你的声音，从这里传到电脑。", Modifier.padding(top = 8.dp, bottom = 24.dp),
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
@@ -260,7 +309,10 @@ private fun PairingPanel(
                 style = SlidingChoiceStyle.Pairing,
                 nativeMaterialVisible = nativeMaterialVisible,
                 onInteraction = dismissInput,
-                onSelect = { index -> scope.launch { pager.animateScrollToPage(index, animationSpec = tween(260, easing = FastOutSlowInEasing)) } },
+                onSelect = { index -> scope.launch {
+                    if (reducedMotion) pager.scrollToPage(index)
+                    else pager.animateScrollToPage(index, animationSpec = tween(260, easing = FastOutSlowInEasing))
+                } },
                 onDragPosition = { position ->
                     val page = position.roundToInt()
                     pager.requestScrollToPage(page, position - page)
@@ -273,17 +325,20 @@ private fun PairingPanel(
                 val isIp = page == 1
                 Column(Modifier.fillMaxWidth()) {
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
-                        val switchWidth = (112.dp * LocalDensity.current.fontScale).coerceAtMost(maxWidth * .66f)
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            AnimatedContent(if (!isIp) "电脑上的 6 位配对码" else if (ipv6) "IPv6 地址" else "IPv4 地址",
-                                modifier = Modifier.weight(1f), transitionSpec = {
-                                    (fadeIn(tween(if (reducedMotion) 0 else 150)) togetherWith fadeOut(tween(if (reducedMotion) 0 else 90)))
-                                        .using(SizeTransform { _, _ -> tween(if (reducedMotion) 0 else 180) })
-                                }, label = "IP address family title") { title ->
-                                Text(title, style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val title = if (!isIp) "电脑上的 6 位配对码" else if (ipv6) "IPv6 地址" else "IPv4 地址"
+                        val labelStyle = MaterialTheme.typography.labelLarge
+                        val switchWidth = maxOf(112.dp, textWidth("IPv6", labelStyle.copy(fontWeight = FontWeight.SemiBold)) * 2 + 28.dp)
+                            .coerceAtMost(maxWidth)
+                        val stacked = isIp && textWidth("IPv6 地址", labelStyle) + switchWidth + 10.dp > maxWidth
+                        val titleContent: @Composable () -> Unit = {
+                            AnimatedContent(title, transitionSpec = {
+                                (fadeIn(tween(if (reducedMotion) 0 else 150)) togetherWith fadeOut(tween(if (reducedMotion) 0 else 90)))
+                                    .using(SizeTransform { _, _ -> tween(if (reducedMotion) 0 else 180) })
+                            }, label = "IP address family title") { text ->
+                                Text(text, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                        }
+                        val versionContent: @Composable () -> Unit = {
                             if (isIp) Box(Modifier.width(switchWidth).semantics {
                                 contentDescription = "IP 版本"
                                 stateDescription = if (ipv6) "IPv6 已开启" else "IPv6 已关闭，使用 IPv4"
@@ -298,7 +353,16 @@ private fun PairingPanel(
                                     compact = true, reducedMotion = reducedMotion)
                             }
                         }
+                        if (stacked) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            titleContent()
+                            Box(Modifier.align(Alignment.End)) { versionContent() }
+                        } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.weight(1f)) { titleContent() }
+                            versionContent()
+                        }
                     }
+
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = if (isIp) host else code,
@@ -313,6 +377,7 @@ private fun PairingPanel(
                         },
                         placeholder = {
                             Text(if (!isIp) "000000" else if (ipv6) "fd12:3456::10" else "192.168.1.100", color = MaterialTheme.colorScheme.outline,
+                                maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
                                 style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Monospace,
                                     letterSpacing = if (isIp) 0.sp else 5.sp))
                         },
@@ -325,7 +390,7 @@ private fun PairingPanel(
                             imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { connect() }),
                         colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                            unfocusedBorderColor = controlBoundaryColor,
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -477,11 +542,13 @@ private fun SessionPanel(
 
 @Composable
 private fun AudioMeter(level: () -> Float, active: Boolean) {
+    val reducedMotion = LocalReducedMotion.current
     val value = level().takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
     val target = if (active) sqrt(value) else 0f
     val display = remember { Animatable(0f) }
-    LaunchedEffect(target) {
-        display.animateTo(target, tween(if (target > display.value) 70 else 240))
+    LaunchedEffect(target, reducedMotion) {
+        if (reducedMotion) display.snapTo(target)
+        else display.animateTo(target, tween(if (target > display.value) 70 else 240))
     }
     val colors = MaterialTheme.colorScheme
     Canvas(Modifier.fillMaxWidth().height(24.dp).semantics {
@@ -514,6 +581,7 @@ private fun EnhancementPanel(
         if (state.noiseSuppression) add(if (state.deskNoiseSuppression) "桌面游戏降噪" else "通用降噪")
         if (state.echoCancellation) add("回声抑制")
     }.joinToString(" · ").ifEmpty { "均已关闭" }
+    val nestedInset = if (LocalDensity.current.fontScale >= 1.5f) 0.dp else 44.dp
     DisclosureCard("声音处理", selection, expanded,
         onToggle = { onInteraction(); expanded = !expanded },
         icon = { ToolIcon(Glyph.Noise, MaterialTheme.colorScheme.primary, Modifier.size(20.dp)) },
@@ -525,21 +593,21 @@ private fun EnhancementPanel(
             EnhancementRow("降噪", "减轻风扇、空调等背景声", Glyph.Noise,
                 state.noiseSuppression, enabled, onNoise)
             Reveal(state.noiseSuppression) {
-                Column(Modifier.padding(start = 44.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.padding(start = nestedInset, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("降噪场景", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     SlidingChoice(listOf("通用", "桌面游戏"), if (state.deskNoiseSuppression) 1f else 0f, enabled,
                         onSelect = { onDeskNoise(it == 1) }, onInteraction = onInteraction)
                     AnimatedContent(state.deskNoiseSuppression, transitionSpec = {
-                        (fadeIn(tween(160, delayMillis = 50)) togetherWith fadeOut(tween(100)))
-                            .using(SizeTransform { _, _ -> tween(240, easing = FastOutSlowInEasing) })
+                        (fadeIn(tween(if (reducedMotion) 0 else 160, delayMillis = if (reducedMotion) 0 else 50)) togetherWith fadeOut(tween(if (reducedMotion) 0 else 100)))
+                            .using(SizeTransform { _, _ -> tween(if (reducedMotion) 0 else 240, easing = FastOutSlowInEasing) })
                     }) { desk ->
                         Text(if (desk) "针对键盘、鼠标和桌面摩擦声，可能影响轻声，并增加约 20 ms 算法延迟。关闭降噪可停止此项处理。" else "适合日常通话与持续的背景噪声。",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-            HorizontalDivider(Modifier.padding(start = 44.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(Modifier.padding(start = nestedInset), color = MaterialTheme.colorScheme.outlineVariant)
             EnhancementRow("回声抑制", "减少电脑外放带来的回声", Glyph.Echo,
                 state.echoCancellation, enabled, onEcho)
         }
@@ -564,33 +632,37 @@ private fun ProcessingStatusPanel(state: MicState) {
     Surface(shape = RoundedCornerShape(14.dp), color = colors.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(6.dp).background(if (running && selected) colors.primary else colors.outline, CircleShape))
-                Spacer(Modifier.width(7.dp))
-                Text("处理监测", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f), maxLines = 1)
-                Text(phase, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
-                IconButton(onClick = { showDetail = true }, modifier = Modifier.size(28.dp).semantics { contentDescription = "查看音频处理详情" }) {
-                    ToolIcon(Glyph.Info, colors.onSurfaceVariant, Modifier.size(15.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val stacked = maxWidth / LocalDensity.current.fontScale < 220.dp
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("处理监测", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                        if (stacked) ProcessingPhase(phase, running && selected)
+                    }
+                    if (!stacked) ProcessingPhase(phase, running && selected)
+                    IconButton(onClick = { showDetail = true }, modifier = Modifier.size(48.dp)
+                        .semantics { contentDescription = "查看音频处理详情" }) {
+                        ToolIcon(Glyph.Info, colors.onSurfaceVariant, Modifier.size(18.dp))
+                    }
                 }
             }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val compact = maxWidth / LocalDensity.current.fontScale < 260.dp
                 val metrics = listOf(
                     Triple("参考流", if (measured) "${stats.referenceFramesPerSecond}" else "—", "帧/秒"),
                     Triple("回声处理", if (measured) "${stats.echoPercent}" else "—", "%"),
                     Triple("原声回退", if (measured) "${stats.fallbackFramesPerSecond}" else "—", "帧/秒"))
+                val labelStyle = MaterialTheme.typography.labelSmall
+                val labelWidth = metrics.maxOf { textWidth(it.first, labelStyle) }
+                // Reserve four digits so ordinary live counter changes cannot switch the layout.
+                val valueWidth = textWidth(metricValue("9999", "帧/秒"), MaterialTheme.typography.titleMedium)
+                val columnWidth = maxOf(labelWidth, valueWidth)
+                val columns = columnWidth * 3 + 16.dp <= maxWidth
+                val inlineMetric = labelWidth + valueWidth + 16.dp <= maxWidth
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (compact) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!columns) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         metrics.forEach { (label, value, unit) ->
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
-                                    color = colors.onSurfaceVariant, maxLines = 1)
-                                Text(value, Modifier.widthIn(min = 50.dp), fontFamily = FontFamily.Monospace,
-                                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                Text(unit, Modifier.width(42.dp), style = MaterialTheme.typography.labelSmall,
-                                    color = colors.onSurfaceVariant, maxLines = 1)
-                            }
+                            ProcessingMetric(label, value, unit, Modifier.fillMaxWidth(), inline = inlineMetric)
                         }
                     } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         metrics.forEach { (label, value, unit) -> ProcessingMetric(label, value, unit, Modifier.weight(1f)) }
@@ -598,11 +670,11 @@ private fun ProcessingStatusPanel(state: MicState) {
                     HorizontalDivider(color = colors.outlineVariant.copy(alpha = .6f))
                     val realignments = "重新对齐 ${if (running) stats.realignments else 0} 次"
                     val timeouts = "处理超时 ${if (running) stats.timeouts else 0} 次"
-                    if (compact) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(realignments, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
-                        Text(timeouts, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
-                    } else Text("$realignments  ·  $timeouts", style = MaterialTheme.typography.labelSmall,
-                        color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp), maxItemsInEachRow = if (columns) 2 else 1) {
+                        Text(realignments, style = labelStyle, color = colors.onSurfaceVariant)
+                        Text(timeouts, style = labelStyle, color = colors.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -614,14 +686,36 @@ private fun ProcessingStatusPanel(state: MicState) {
 }
 
 @Composable
-private fun ProcessingMetric(label: String, value: String, unit: String, modifier: Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(value, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.titleMedium, maxLines = 1, modifier = Modifier.widthIn(min = 42.dp))
-            Text(unit, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+private fun ProcessingPhase(phase: String, running: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Box(Modifier.size(6.dp).background(if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape))
+        Text(phase, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun metricValue(value: String, unit: String): AnnotatedString = buildAnnotatedString {
+    pushStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold))
+    append(value)
+    pop()
+    pushStyle(SpanStyle(fontSize = MaterialTheme.typography.labelSmall.fontSize,
+        color = MaterialTheme.colorScheme.onSurfaceVariant))
+    append(" $unit")
+    pop()
+}
+
+@Composable
+private fun ProcessingMetric(label: String, value: String, unit: String, modifier: Modifier, inline: Boolean = false) {
+    val accessible = modifier.semantics(mergeDescendants = true) {}
+    if (inline) {
+        Row(accessible, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(metricValue(value, unit), style = MaterialTheme.typography.titleMedium)
+        }
+    } else {
+        Column(accessible, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(metricValue(value, unit), style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -629,22 +723,30 @@ private fun ProcessingMetric(label: String, value: String, unit: String, modifie
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GainControl(gain: Int, enabled: Boolean, onChange: (Float) -> Unit) {
+    val reducedMotion = LocalReducedMotion.current
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val dragged by source.collectIsDraggedAsState()
     val engaged = pressed || dragged
     var gestureValue by remember { mutableStateOf<Float?>(null) }
     LaunchedEffect(engaged) { if (!engaged) gestureValue = null }
-    val restingValue by animateFloatAsState(gain.toFloat(), tween(if (engaged) 0 else 180, easing = FastOutSlowInEasing))
-    val halo by animateFloatAsState(if (engaged) 1f else 0f, tween(140))
+    val restingValue by animateFloatAsState(gain.toFloat(), tween(if (engaged || reducedMotion) 0 else 180, easing = FastOutSlowInEasing))
+    val halo by animateFloatAsState(if (engaged && !reducedMotion) 1f else 0f, tween(if (reducedMotion) 0 else 140))
     val colors = MaterialTheme.colorScheme
+    val boundary = controlBoundaryColor
     Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("收音增强", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Surface(color = colors.primaryContainer, shape = RoundedCornerShape(8.dp)) {
-                Text(if (gain == 0) "0 dB" else "+$gain dB", Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    style = MaterialTheme.typography.labelLarge, color = colors.onPrimaryContainer,
-                    fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val titleStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
+            val badgeStyle = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+            if (textWidth("收音增强", titleStyle) + textWidth("+18 dB", badgeStyle) + 32.dp <= maxWidth) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("收音增强", Modifier.weight(1f), style = titleStyle)
+                    GainBadge(gain)
+                }
+            } else Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("收音增强", style = titleStyle)
+                GainBadge(gain)
             }
         }
         Slider(value = if (engaged) gestureValue ?: restingValue else restingValue, onValueChange = {
@@ -667,7 +769,7 @@ private fun GainControl(gain: Int, enabled: Boolean, onChange: (Float) -> Unit) 
                 Canvas(Modifier.fillMaxWidth().height(4.dp)) {
                     val start = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) size.width else 0f
                     val end = size.width - start
-                    drawLine(colors.outlineVariant.copy(alpha = if (enabled) 1f else .4f), Offset(start, center.y), Offset(end, center.y),
+                    drawLine(boundary.copy(alpha = if (enabled) 1f else .4f), Offset(start, center.y), Offset(end, center.y),
                         size.height, StrokeCap.Round)
                     val fraction = (slider.value / 18f).coerceIn(0f, 1f)
                     if (fraction > 0f) drawLine(if (enabled) colors.primary else colors.outline,
@@ -678,13 +780,36 @@ private fun GainControl(gain: Int, enabled: Boolean, onChange: (Float) -> Unit) 
             Text("关闭", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
             Text("+18 dB", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
         }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("手机放桌面时可适度提高，也会放大残余噪声。", Modifier.weight(1f).padding(end = 4.dp),
-                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            TextButton(onClick = { onChange(0f) }, enabled = enabled && gain != 0,
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                modifier = Modifier.semantics { contentDescription = "恢复 0 dB，关闭收音增强" }) { Text("恢复 0 dB", style = MaterialTheme.typography.labelMedium) }
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            val hint = "手机放桌面时可适度提高，也会放大残余噪声。"
+            if (maxWidth / LocalDensity.current.fontScale < 240.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(hint, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    GainReset(enabled && gain != 0) { onChange(0f) }
+                }
+            } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(hint, Modifier.weight(1f).padding(end = 4.dp),
+                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                GainReset(enabled && gain != 0) { onChange(0f) }
+            }
         }
+    }
+}
+
+@Composable
+private fun GainBadge(gain: Int) {
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
+        Text(if (gain == 0) "0 dB" else "+$gain dB", Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer,
+            fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun GainReset(enabled: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = enabled, contentPadding = PaddingValues(horizontal = 8.dp),
+        modifier = Modifier.semantics { contentDescription = "恢复 0 dB，关闭收音增强" }) {
+        Text("恢复 0 dB", style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -719,23 +844,13 @@ private fun SettingSwitch(
     val pressed by source.collectIsPressedAsState()
     val tint by animateColorAsState(if (pressed) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent, tween(120))
     val haptic = LocalHapticFeedback.current
-    Row(Modifier.fillMaxWidth().pressFeedback(source).clip(RoundedCornerShape(12.dp)).background(tint)
-        .toggleable(value = checked, enabled = enabled, interactionSource = source, indication = null,
-            role = Role.Switch, onValueChange = {
-                haptic.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
-                onChange(it)
-            })
-        .padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (icon != null) {
-            icon()
-            Spacer(Modifier.width(16.dp))
-        }
-        Column(Modifier.weight(1f).padding(end = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .5f))
-            if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f))
-        }
+    val titleStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .5f))
+    val detailContent: @Composable () -> Unit = {
+        if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f))
+    }
+    val toggle: @Composable () -> Unit = {
         Switch(checked = checked, onCheckedChange = null, enabled = enabled,
             colors = SwitchDefaults.colors(
                 uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -743,6 +858,29 @@ private fun SettingSwitch(
                 uncheckedBorderColor = Color.Transparent,
                 checkedBorderColor = Color.Transparent,
             ), modifier = Modifier.clearAndSetSemantics {})
+    }
+    Box(Modifier.fillMaxWidth().pressFeedback(source).clip(RoundedCornerShape(12.dp)).background(tint)
+        .toggleable(value = checked, enabled = enabled, interactionSource = source, indication = null,
+            role = Role.Switch, onValueChange = {
+                haptic.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                onChange(it)
+            }).padding(vertical = 14.dp)) {
+        if (LocalDensity.current.fontScale >= 1.5f) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ControlHeading(label, reserveLabel = if (detail != null) "回声抑制" else label, style = titleStyle, control = toggle)
+                detailContent()
+            }
+        } else Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                icon()
+                Spacer(Modifier.width(16.dp))
+            }
+            Column(Modifier.weight(1f).padding(end = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(label, style = titleStyle)
+                detailContent()
+            }
+            toggle()
+        }
     }
 }
 

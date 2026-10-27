@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -31,12 +32,17 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun SettingsScreen(mode: ThemeMode, onChange: (ThemeMode) -> Unit, onBack: () -> Unit) {
+internal fun SettingsScreen(
+    mode: ThemeMode, onChange: (ThemeMode) -> Unit,
+    manualReducedMotion: Boolean = false, systemReducedMotion: Boolean = false,
+    onReducedMotionChange: (Boolean) -> Unit = {}, onBack: () -> Unit,
+) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     Surface(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures {} }
@@ -71,9 +77,45 @@ internal fun SettingsScreen(mode: ThemeMode, onChange: (ThemeMode) -> Unit, onBa
                 Text("选择自动保存，下次打开依然生效。", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 24.dp))
+                MotionOption(manualReducedMotion, systemReducedMotion, onReducedMotionChange)
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
+}
+
+@Composable
+private fun MotionOption(manual: Boolean, system: Boolean, onChange: (Boolean) -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large) {
+        BoxWithConstraints(Modifier.fillMaxWidth().pressFeedback(interaction, 18.dp)
+            .toggleable(value = manual || system, enabled = !system, role = Role.Switch,
+                interactionSource = interaction, indication = null, onValueChange = onChange)
+            .semantics { stateDescription = if (system) "已跟随系统开启" else if (manual) "已开启" else "已关闭" }
+            .padding(18.dp)) {
+            val detail = if (system) "系统已开启，当前自动遵循。关闭系统设置后，可在此单独控制。"
+                else "减少页面移动、缩放和展开动画。"
+            if (maxWidth / LocalDensity.current.fontScale < 180.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ControlHeading("减少动态效果") {
+                        MotionSwitch(manual || system, !system)
+                    }
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("减少动态效果", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                MotionSwitch(manual || system, !system)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MotionSwitch(checked: Boolean, enabled: Boolean) {
+    Switch(checked = checked, enabled = enabled, onCheckedChange = null, modifier = Modifier.clearAndSetSemantics {})
 }
 
 @Composable
@@ -83,21 +125,31 @@ private fun ThemeOption(mode: ThemeMode, selected: Boolean, onClick: () -> Unit)
     val border by animateColorAsState(if (selected) colors.primary else colors.outlineVariant, tween(160))
     val interaction = remember { MutableInteractionSource() }
     val haptic = LocalHapticFeedback.current
-    Row(Modifier.fillMaxWidth().pressFeedback(interaction, 18.dp).clip(RoundedCornerShape(18.dp))
+    BoxWithConstraints(Modifier.fillMaxWidth().pressFeedback(interaction, 18.dp).clip(RoundedCornerShape(18.dp))
         .background(fill).border(1.dp, border, RoundedCornerShape(18.dp))
         .selectable(selected, interactionSource = interaction, indication = null, role = Role.RadioButton) {
             if (!selected) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onClick() }
-        }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-        ThemePreview(mode)
-        Column(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(mode.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Text(when (mode) {
-                ThemeMode.SYSTEM -> "随系统自动切换日间与夜间"
-                ThemeMode.LIGHT -> "明亮清晰的白色界面"
-                ThemeMode.DARK -> "柔和低光的黑色界面"
-            }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }.padding(18.dp)) {
+        val detail = when (mode) {
+            ThemeMode.SYSTEM -> "随系统自动切换日间与夜间"
+            ThemeMode.LIGHT -> "明亮清晰的白色界面"
+            ThemeMode.DARK -> "柔和低光的黑色界面"
         }
-        RadioButton(selected, onClick = null, modifier = Modifier.clearAndSetSemantics {})
+        if (maxWidth / LocalDensity.current.fontScale < 150.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ControlHeading(mode.label, reserveLabel = "跟随系统") {
+                    RadioButton(selected, onClick = null, modifier = Modifier.clearAndSetSemantics {})
+                }
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
+        } else Row(verticalAlignment = Alignment.CenterVertically) {
+            ThemePreview(mode)
+            Column(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(mode.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
+            RadioButton(selected, onClick = null, modifier = Modifier.clearAndSetSemantics {})
+        }
     }
 }
 

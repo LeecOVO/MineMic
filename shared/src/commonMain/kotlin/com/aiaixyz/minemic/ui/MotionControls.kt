@@ -56,7 +56,7 @@ import kotlin.math.roundToInt
 @Composable
 internal fun Modifier.pressFeedback(
     source: MutableInteractionSource, cornerRadius: Dp = 12.dp, focusTint: Color? = null,
-    reducedMotion: Boolean = false,
+    reducedMotion: Boolean = LocalReducedMotion.current,
 ): Modifier {
     val pressed by source.collectIsPressedAsState()
     val focused by source.collectIsFocusedAsState()
@@ -70,7 +70,7 @@ internal fun Modifier.pressFeedback(
 }
 
 @Composable
-internal fun Reveal(visible: Boolean, reducedMotion: Boolean = false, content: @Composable () -> Unit) {
+internal fun Reveal(visible: Boolean, reducedMotion: Boolean = LocalReducedMotion.current, content: @Composable () -> Unit) {
     AnimatedVisibility(visible,
         enter = expandVertically(tween(if (reducedMotion) 0 else 240, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) +
             fadeIn(tween(if (reducedMotion) 0 else 160, delayMillis = if (reducedMotion) 0 else 40)),
@@ -92,7 +92,7 @@ internal fun SlidingChoice(
     style: SlidingChoiceStyle = SlidingChoiceStyle.Default,
     nativeMaterialVisible: Boolean = true,
     compact: Boolean = false,
-    reducedMotion: Boolean = false,
+    reducedMotion: Boolean = LocalReducedMotion.current,
 ) {
     require(labels.size == 2)
     val latestPosition by rememberUpdatedState(position)
@@ -162,6 +162,7 @@ internal fun SlidingChoice(
         val nativeGlass = if (pairing && nativeMaterialVisible) PlatformPairingSelection(
             labels = labels, position = shown.coerceIn(0f, 1f), enabled = enabled,
             engaged = dragging || pillPressed, rtl = rtl, compact = compact, modifier = Modifier.matchParentSize(),
+            reducedMotion = reducedMotion,
         ) else false
         if (!nativeGlass) Box(Modifier.matchParentSize()) {
             val pill = Modifier.offset(x = cellWidth * shown.coerceIn(0f, 1f))
@@ -211,31 +212,45 @@ internal fun SlidingChoice(
 internal fun DisclosureCard(
     title: String, summary: String, expanded: Boolean, onToggle: () -> Unit,
     icon: @Composable () -> Unit, footer: (@Composable ColumnScope.() -> Unit)? = null,
-    footerVisible: Boolean = true, footerReducedMotion: Boolean = false,
+    footerVisible: Boolean = true, footerReducedMotion: Boolean = LocalReducedMotion.current,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val source = remember { MutableInteractionSource() }
-    val angle by animateFloatAsState(if (expanded) 180f else 0f, tween(240, easing = FastOutSlowInEasing))
+    val reducedMotion = LocalReducedMotion.current
+    val angle by animateFloatAsState(if (expanded) 180f else 0f, tween(if (reducedMotion) 0 else 240, easing = FastOutSlowInEasing))
     Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().pressFeedback(source).clip(RoundedCornerShape(20.dp))
-                .clickable(interactionSource = source, indication = null, role = Role.Button,
-                    onClickLabel = if (expanded) "收起$title" else "展开$title", onClick = onToggle)
-                .semantics { stateDescription = if (expanded) "已展开" else "已收起" }
-                .heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow), contentAlignment = Alignment.Center) { icon() }
-                Column(Modifier.weight(1f).animateContentSize(tween(180, easing = FastOutSlowInEasing)), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                val color = MaterialTheme.colorScheme.onSurfaceVariant
+            val color = MaterialTheme.colorScheme.onSurfaceVariant
+            val arrow: @Composable () -> Unit = {
                 Canvas(Modifier.size(20.dp).graphicsLayer { rotationZ = angle }) {
                     val unit = size.width / 20f
                     drawLine(color, Offset(5f * unit, 8f * unit), Offset(10f * unit, 13f * unit), 1.7f * unit, StrokeCap.Round)
                     drawLine(color, Offset(10f * unit, 13f * unit), Offset(15f * unit, 8f * unit), 1.7f * unit, StrokeCap.Round)
+                }
+            }
+            Box(Modifier.fillMaxWidth().pressFeedback(source).clip(RoundedCornerShape(20.dp))
+                .clickable(interactionSource = source, indication = null, role = Role.Button,
+                    onClickLabel = if (expanded) "收起$title" else "展开$title", onClick = onToggle)
+                .semantics { stateDescription = if (expanded) "已展开" else "已收起" }
+                .heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp), contentAlignment = Alignment.CenterStart) {
+                if (LocalDensity.current.fontScale >= 1.5f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            arrow()
+                        }
+                        Text(summary, style = MaterialTheme.typography.bodySmall, color = color)
+                    }
+                } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow), contentAlignment = Alignment.Center) { icon() }
+                    Column(Modifier.weight(1f).animateContentSize(tween(if (reducedMotion) 0 else 180, easing = FastOutSlowInEasing)),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(summary, style = MaterialTheme.typography.bodySmall, color = color)
+                    }
+                    arrow()
                 }
             }
             Reveal(expanded) {

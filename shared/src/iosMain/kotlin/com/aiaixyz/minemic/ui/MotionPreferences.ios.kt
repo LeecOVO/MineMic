@@ -5,8 +5,17 @@ package com.aiaixyz.minemic.ui
 import androidx.compose.runtime.*
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
+import platform.Foundation.NSUserDefaults
 import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
 import platform.UIKit.UIAccessibilityReduceMotionStatusDidChangeNotification
+
+@Composable
+internal actual fun rememberMotionSettings(): MotionSettings = remember {
+    val preferences = NSUserDefaults.standardUserDefaults
+    MotionSettings(preferences.boolForKey(REDUCED_MOTION_KEY)) {
+        preferences.setBool(it, forKey = REDUCED_MOTION_KEY)
+    }
+}
 
 @Composable
 internal actual fun rememberReducedMotion(): Boolean {

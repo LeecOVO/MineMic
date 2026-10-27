@@ -21,7 +21,7 @@ internal actual val usesSystemPairingAppearance: Boolean = true
 @Composable
 internal actual fun PlatformPairingSelection(
     labels: List<String>, position: Float, enabled: Boolean, engaged: Boolean, rtl: Boolean, compact: Boolean,
-    modifier: Modifier,
+    modifier: Modifier, reducedMotion: Boolean,
 ): Boolean {
     val factory = LocalNativeGlassEffectFactory.current ?: return false
     // The native material tracks system transparency/contrast preferences, including Reduce Transparency.
@@ -38,7 +38,7 @@ internal actual fun PlatformPairingSelection(
             // The overlay is hosted outside Compose's controller; mirror only the app's light/dark mode.
             view.overrideUserInterfaceStyle = if (dark) UIUserInterfaceStyle.UIUserInterfaceStyleDark
                 else UIUserInterfaceStyle.UIUserInterfaceStyleLight
-            view.update(labels, position.toDouble(), enabled, engaged, rtl, compact, glass, fontSize.toDouble())
+            view.update(labels, position.toDouble(), enabled, engaged, rtl, compact, glass, fontSize.toDouble(), reducedMotion)
         },
     )
     return true
@@ -55,6 +55,7 @@ private class PairingGlassView : UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)) 
     private var compact = false
     private var engaged = false
     private var fontSize = 0.0
+    private var reducedMotion = false
 
     init {
         backgroundColor = UIColor.clearColor
@@ -80,11 +81,12 @@ private class PairingGlassView : UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)) 
 
     fun update(
         labels: List<String>, position: Double, enabled: Boolean, engaged: Boolean, rtl: Boolean, compact: Boolean,
-        glass: UIVisualEffect, fontSize: Double,
+        glass: UIVisualEffect, fontSize: Double, reducedMotion: Boolean,
     ) {
         this.position = position.coerceIn(0.0, 1.0)
         this.rtl = rtl
         this.compact = compact
+        this.reducedMotion = reducedMotion || UIAccessibilityIsReduceMotionEnabled()
         if (this.fontSize != fontSize) {
             this.fontSize = fontSize
             val font = UIFont.systemFontOfSize(fontSize, weight = UIFontWeightSemibold)
@@ -103,14 +105,16 @@ private class PairingGlassView : UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)) 
         }
         setNeedsLayout()
         layoutIfNeeded()
-        val active = engaged && enabled && !UIAccessibilityIsReduceMotionEnabled()
+        val active = engaged && enabled && !this.reducedMotion
         if (this.engaged != active) {
             this.engaged = active
             val animate = {
                 lens.transform = CGAffineTransformMakeScale(if (active) 1.025 else 1.0, if (active) 1.08 else 1.0)
             }
-            if (UIAccessibilityIsReduceMotionEnabled() || window == null) animate()
-            else UIView.animateWithDuration(.28, delay = 0.0, usingSpringWithDamping = .78,
+            if (this.reducedMotion || window == null) {
+                lens.layer.removeAllAnimations()
+                animate()
+            } else UIView.animateWithDuration(.28, delay = 0.0, usingSpringWithDamping = .78,
                 initialSpringVelocity = 0.0, options = UIViewAnimationOptionBeginFromCurrentState,
                 animations = animate, completion = null)
         }
@@ -124,7 +128,7 @@ private class PairingGlassView : UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)) 
         val cell = width / 2.0
         val physicalPosition = if (rtl) 1.0 - position else position
         // Stretch slightly while crossing the divider, without a second position animation.
-        val stretch = if (UIAccessibilityIsReduceMotionEnabled()) 0.0 else sin(PI * position) * cell * .055
+        val stretch = if (reducedMotion) 0.0 else sin(PI * position) * cell * .055
         val lensWidth = cell + stretch
         val x = (physicalPosition * cell - stretch / 2.0).coerceIn(0.0, width - lensWidth)
         // Changing bounds/center keeps layout independent from the press transform.
