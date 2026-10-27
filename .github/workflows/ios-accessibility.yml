@@ -62,10 +62,22 @@ jobs:
           else:
               raise SystemExit('No installed iPhone simulator; no additional runtime will be downloaded.')
           PY
-      - name: Test real UIKit adjustable selectors and control actions
+      - name: Test real UIKit controls in an application host
+        timeout-minutes: 15
         run: |
-          ./gradlew :shared:iosSimulatorArm64Test --device "$MINEMIC_SIMULATOR" \
-            --tests '*NativeAccessibleControlsTest*' --max-workers=2 --no-parallel --console=plain
+          set -o pipefail
+          ./gradlew -I tests/ios-accessibility/hosted-tests.gradle \
+            :shared:prepareNativeControlTestFramework --max-workers=2 --no-parallel --console=plain
+          gem install --user-install xcodeproj -v 1.28.1 --no-document
+          export GEM_PATH="$(ruby -e 'print ([Gem.user_dir] + Gem.path).uniq.join(":")')"
+          ruby tests/ios-accessibility/prepare.rb
+          xcodebuild -project build/ios-accessibility-host/NativeControls.xcodeproj \
+            -scheme NativeControlsTests -configuration Debug -jobs 2 \
+            -destination "platform=iOS Simulator,id=$MINEMIC_SIMULATOR" \
+            -derivedDataPath build/ios-accessibility-host/DerivedData \
+            -resultBundlePath build/ios-accessibility-host/NativeControls.xcresult \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test \
+            2>&1 | tee build/ios-accessibility-host/tests.log
       - name: Build unsigned device app for local VoiceOver testing
         run: |
           set -o pipefail
@@ -108,7 +120,8 @@ jobs:
         with:
           name: MineMic-VoiceOver-test-results
           path: |
-            shared/build/test-results/iosSimulatorArm64Test/
+            build/ios-accessibility-host/tests.log
+            build/ios-accessibility-host/NativeControls.xcresult/
             build/ios-accessibility/build.log
             build/ios-accessibility/crashes/
           if-no-files-found: ignore

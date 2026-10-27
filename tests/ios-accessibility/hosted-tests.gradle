@@ -1,0 +1,20 @@
+// UIKit target-action requires UIApplication. Export these checks only for the XCTest host.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject.project(':shared')
+    def kotlin = p.extensions.getByName('kotlin')
+    kotlin.sourceSets.getByName('iosTest').kotlin.srcDir(gradle.rootProject.file('tests/ios-accessibility/kotlin'))
+    def target = kotlin.targets.getByName('iosSimulatorArm64')
+    def debug = target.binaries.getFramework('DEBUG').buildType
+    target.binaries.framework('nativeControlsTestSupport', [debug]) {
+        setCompilation(target.compilations.getByName('test'))
+        baseName = 'NativeControlsTestSupport'
+        setStatic(true)
+        linkerOpts('-lc++')
+    }
+    def framework = target.binaries.getFramework('nativeControlsTestSupport', 'DEBUG')
+    p.tasks.register('prepareNativeControlTestFramework', Sync) {
+        dependsOn framework.linkTaskProvider
+        from(framework.outputFile)
+        into(gradle.rootProject.file('build/ios-accessibility-host/frameworks/NativeControlsTestSupport.framework'))
+    }
+}

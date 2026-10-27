@@ -165,3 +165,32 @@ class NativeAccessibleControlsTest {
         assertTrue(choice.accessibilityElementsHidden)
     }
 }
+
+/** Exported only by the test-compilation framework, never by the production Shared framework. */
+class NativeControlTestHarness {
+    fun runCase(name: String): String? = try {
+        val application = sharedApplicationOrNull()
+        println("[NativeControlHost] case=$name mainThread=${NSThread.isMainThread} application=$application")
+        fflush(null)
+        checkNotNull(application) { "UIKit target-action tests require an application host started by UIApplicationMain" }
+        check(NSThread.isMainThread) { "UIKit target-action tests must run on the main thread" }
+        val tests = NativeAccessibleControlsTest()
+        when (name) {
+            "objectiveCAdjustableSelectorsWalkEveryGainValueInBothDirections" -> tests.objectiveCAdjustableSelectorsWalkEveryGainValueInBothDirections()
+            "gainUsesNativeTargetActionAndOneDecibelAdjustments" -> tests.gainUsesNativeTargetActionAndOneDecibelAdjustments()
+            "gainBoundsDisabledAndReleaseDoNotDispatch" -> tests.gainBoundsDisabledAndReleaseDoNotDispatch()
+            "segmentedSelectionUsesNativeValueChangedAndRetainsCategoryValues" -> tests.segmentedSelectionUsesNativeValueChangedAndRetainsCategoryValues()
+            "largeTextChoicesAreIndividuallyActivatableNativeButtons" -> tests.largeTextChoicesAreIndividuallyActivatableNativeButtons()
+            else -> error("Unknown native-control test case: $name")
+        }
+        null
+    } catch (failure: Throwable) {
+        failure.stackTraceToString().also {
+            println("[NativeControlHost] failed: $name\n$it")
+            fflush(null)
+        }
+    }
+
+    // The SDK declaration is non-null, but a standalone Kotlin test process has no UIApplication.
+    private fun sharedApplicationOrNull(): UIApplication? = UIApplication.sharedApplication
+}
