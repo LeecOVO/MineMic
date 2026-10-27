@@ -70,7 +70,7 @@ jobs:
       - name: Install Android toolchain
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            'platforms;android-37' 'build-tools;37.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+            'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
           printf '\norg.gradle.jvmargs=-Xmx2304m -Dfile.encoding=UTF-8\nkotlin.daemon.jvmargs=-Xmx1536m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> gradle.properties
       - name: Restore native build cache
         id: native-cache
