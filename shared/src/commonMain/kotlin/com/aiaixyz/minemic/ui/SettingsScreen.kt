@@ -88,31 +88,22 @@ internal fun SettingsScreen(
 private fun MotionOption(manual: Boolean, system: Boolean, onChange: (Boolean) -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large) {
-        BoxWithConstraints(Modifier.fillMaxWidth().pressFeedback(interaction, 18.dp)
-            .toggleable(value = manual || system, enabled = !system, role = Role.Switch,
-                interactionSource = interaction, indication = null, onValueChange = onChange)
-            .semantics {
-                contentDescription = "减少动态效果"
-                stateDescription = if (system) "已跟随系统开启，当前不可修改" else if (manual) "已开启" else "已关闭"
-                onClick(label = if (system) "关闭系统设置后，可在应用内单独控制" else "减少页面移动、缩放和展开动画", action = null)
-            }
-            .padding(18.dp)) {
-            val detail = if (system) "系统已开启，当前自动遵循。关闭系统设置后，可在此单独控制。"
-                else "减少页面移动、缩放和展开动画。"
-            if (maxWidth / LocalDensity.current.fontScale < 180.dp) {
-                Column(Modifier.clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ControlHeading("减少动态效果") {
-                        MotionSwitch(manual || system, !system)
-                    }
-                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.fillMaxWidth().pressFeedback(interaction, 18.dp)
+                .toggleable(value = manual || system, enabled = !system, role = Role.Switch,
+                    interactionSource = interaction, indication = null, onValueChange = onChange)
+                .semantics {
+                    contentDescription = "减少动态效果"
+                    stateDescription = if (system) "已跟随系统开启，应用内不可关闭" else if (manual) "已开启" else "已关闭"
+                    onClick(label = if (manual) "恢复应用动画，仍遵循系统设置" else "减少页面移动、缩放和展开动画", action = null)
+                }.padding(vertical = 4.dp)) {
+                Box(Modifier.clearAndSetSemantics {}) {
+                    ControlHeading("减少动态效果") { MotionSwitch(manual || system, !system) }
                 }
-            } else Row(Modifier.clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("减少动态效果", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                MotionSwitch(manual || system, !system)
             }
+            Text(if (system) "系统已开启减少动态效果，应用自动遵循。若要在应用内关闭，请先到系统的辅助功能设置中关闭此项。"
+                else "减少页面移动、按压缩放和卡片展开动画。系统开启时，应用也会自动遵循。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

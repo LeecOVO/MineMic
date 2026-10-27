@@ -152,7 +152,7 @@ private fun AboutRow(title: String, detail: String, glyph: AboutGlyph, external:
             onClickLabel = if (external) "在浏览器打开 GitHub 项目，LeecOVO/MineMic" else "打开$title，$detail") {
             haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
             onClick()
-        }.semantics { contentDescription = title }.heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
+        }.semantics { contentDescription = if (external) "$title，GitHub，在浏览器打开" else "$title，$detail" }.heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically) {
         val largeText = LocalDensity.current.fontScale >= 1.5f
         if (!largeText) AboutIcon(glyph, Modifier.size(24.dp), accent = true)

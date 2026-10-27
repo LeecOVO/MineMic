@@ -86,6 +86,7 @@ internal enum class SlidingChoiceStyle { Default, Pairing }
 internal fun SlidingChoice(
     labels: List<String>, position: Float, enabled: Boolean,
     hints: List<String> = labels.map { "选择$it" },
+    groupLabel: String = "",
     onSelect: (Int) -> Unit, onInteraction: () -> Unit = {},
     onDragPosition: ((Float) -> Unit)? = null,
     selectedIndex: Int = position.roundToInt(),
@@ -101,6 +102,22 @@ internal fun SlidingChoice(
     val latestDrag by rememberUpdatedState(onDragPosition)
     val latestInteraction by rememberUpdatedState(onInteraction)
     val latestDraggingChange by rememberUpdatedState(onDraggingChange)
+    val nativeChoice = PlatformAccessibleChoice(
+        labels = labels, hints = hints, groupLabel = groupLabel,
+        selectedIndex = selectedIndex, enabled = enabled, visible = nativeMaterialVisible,
+        onSelect = { index ->
+            latestInteraction()
+            latestDraggingChange(false)
+            // A pager's position callback already commits this exact page. Starting its
+            // animated selection as well would race that request and momentarily restore old state.
+            val setPosition = latestDrag
+            if (setPosition != null) setPosition(index.toFloat()) else latestSelect(index)
+        }, modifier = Modifier.fillMaxWidth(),
+    )
+    // Releasing Compose's draggable (including a live VoiceOver switch) must not leave the
+    // surrounding pager disabled by an old "dragging" flag.
+    DisposableEffect(nativeChoice) { onDispose { latestDraggingChange(false) } }
+    if (nativeChoice) return
     var dragging by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableFloatStateOf(0f) }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl

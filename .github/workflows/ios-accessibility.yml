@@ -1,0 +1,97 @@
+name: iOS accessibility validation
+
+on:
+  push:
+    branches: ['codex/voiceover-controls']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-accessibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      MINEMIC_NATIVE_JOBS: '2'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: zulu
+          java-version: '21'
+          cache: gradle
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Bound build concurrency
+        run: |
+          printf '\norg.gradle.jvmargs=-Xmx2304m -Dfile.encoding=UTF-8\nkotlin.daemon.jvmargs=-Xmx1536m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> gradle.properties
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/build
+            ~/.konan
+          key: ios-release-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
+      - name: Select an installed iPhone simulator
+        run: |
+          xcrun simctl list --json > "$RUNNER_TEMP/simulators.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          inventory = json.loads((Path(os.environ['RUNNER_TEMP'])/'simulators.json').read_text())
+          for runtime, devices in sorted(inventory['devices'].items(), reverse=True):
+              if 'iOS' not in runtime:
+                  continue
+              matches = [d for d in devices if d.get('isAvailable') and d['name'].startswith('iPhone')]
+              if matches:
+                  chosen = matches[0]
+                  with open(os.environ['GITHUB_ENV'], 'a') as out:
+                      out.write('MINEMIC_SIMULATOR=' + chosen['udid'] + '\n')
+                  print('Using installed simulator:', chosen['name'], runtime)
+                  break
+          else:
+              raise SystemExit('No installed iPhone simulator; no additional runtime will be downloaded.')
+          PY
+      - name: Test real UIKit adjustable selectors and control actions
+        run: |
+          ./gradlew :shared:iosSimulatorArm64Test --device "$MINEMIC_SIMULATOR" \
+            --tests '*NativeAccessibleControlsTest*' --max-workers=2 --no-parallel --console=plain
+      - name: Build unsigned device app for local VoiceOver testing
+        run: |
+          set -o pipefail
+          mkdir -p build/ios-accessibility
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
+            -configuration Debug -destination 'generic/platform=iOS' -jobs 2 \
+            -derivedDataPath build/ios-accessibility/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' DEVELOPMENT_TEAM='' \
+            build 2>&1 | tee build/ios-accessibility/build.log
+          mkdir -p dist
+          app=build/ios-accessibility/DerivedData/Build/Products/Debug-iphoneos/MineMic.app
+          test -d "$app"
+          ditto -c -k --norsrc --noextattr --keepParent "$app" dist/MineMic-VoiceOver-device-unsigned.zip
+          printf '%s\n' "$GITHUB_SHA" > dist/source-commit.txt
+          shasum -a 256 dist/MineMic-VoiceOver-device-unsigned.zip > dist/MineMic-VoiceOver-device-unsigned.zip.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MineMic-VoiceOver-device-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MineMic-VoiceOver-test-results
+          path: |
+            shared/build/test-results/iosSimulatorArm64Test/
+            build/ios-accessibility/build.log
+          if-no-files-found: ignore
+          retention-days: 3
