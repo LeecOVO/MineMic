@@ -121,12 +121,18 @@ internal class NativeGainSlider : UISlider(frame = CGRectMake(0.0, 0.0, 0.0, 0.0
         minimumValue = 0f
         maximumValue = 18f
         continuous = true
+        isAccessibilityElement = true
+        accessibilityTraits = UIAccessibilityTraitAdjustable
         identify("minemic.gain.native")
         addTarget(this, NSSelectorFromString("gainChanged"), UIControlEventValueChanged)
     }
 
     fun configure(value: Int, enabled: Boolean, label: String, hint: String, onChange: (Int) -> Unit) {
         this.enabled = enabled
+        // Keep this subclass's adjustable role and disabled state explicit for native accessibility.
+        isAccessibilityElement = true
+        accessibilityTraits = UIAccessibilityTraitAdjustable or
+            (if (enabled) UIAccessibilityTraitNone else UIAccessibilityTraitNotEnabled)
         onGainChange = onChange
         // A capture-state refresh must not pull the thumb back while UIKit is tracking a drag.
         currentGain = if (tracking) this.value.roundToInt().coerceIn(0, 18) else value.coerceIn(0, 18)

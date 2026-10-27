@@ -91,7 +91,10 @@ class NativeAccessibleControlsTest {
         assertEquals(11, changed.last())
         assertEquals(11f, slider.value)
         assertEquals("增加 11 分贝", slider.accessibilityValue)
-        assertTrue(slider.accessibilityTraits and UIAccessibilityTraitAdjustable != 0UL)
+        val traits = slider.accessibilityTraits
+        assertTrue(slider.isAccessibilityElement, "Native gain slider must be an accessibility element")
+        assertTrue(traits and UIAccessibilityTraitAdjustable != 0UL,
+            "Native gain slider must be adjustable; actual traits=0x${traits.toString(16)}")
         assertEquals(0UL, slider.accessibilityTraits and UIAccessibilityTraitAllowsDirectInteraction)
         slider.dispose()
     }
@@ -107,16 +110,26 @@ class NativeAccessibleControlsTest {
         slider.accessibilityIncrement()
         assertTrue(changed.isEmpty())
         slider.configure(5, false, "收音增强", "", changed::add)
+        val disabledTraits = slider.accessibilityTraits
+        assertTrue(slider.isAccessibilityElement, "Disabled gain must remain discoverable")
+        assertTrue(disabledTraits and UIAccessibilityTraitNotEnabled != 0UL,
+            "Disabled gain must expose NotEnabled; actual traits=0x${disabledTraits.toString(16)}")
+        assertTrue(disabledTraits and UIAccessibilityTraitAdjustable != 0UL,
+            "Disabled gain must retain its adjustable role; actual traits=0x${disabledTraits.toString(16)}")
+        assertEquals(0UL, disabledTraits and UIAccessibilityTraitAllowsDirectInteraction)
         slider.accessibilityIncrement()
         slider.setValue(8f, animated = false)
         slider.sendActionsForControlEvents(UIControlEventValueChanged)
         assertTrue(changed.isEmpty())
         slider.configure(5, true, "收音增强", "", changed::add)
+        assertEquals(0UL, slider.accessibilityTraits and UIAccessibilityTraitNotEnabled,
+            "Re-enabling gain must clear NotEnabled")
         slider.dispose()
         slider.accessibilityIncrement()
         slider.sendActionsForControlEvents(UIControlEventValueChanged)
         assertTrue(changed.isEmpty())
         assertFalse(slider.userInteractionEnabled)
+        assertFalse(slider.isAccessibilityElement)
     }
 
     @Test
