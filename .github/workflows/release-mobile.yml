@@ -1,0 +1,242 @@
+name: Mobile release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify release tag and metadata
+        id: version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          config = dict(re.findall(r'^([A-Z_]+)=(.+)$', Path('version.xcconfig').read_text(), re.M))
+          version, build = config['MINEMIC_VERSION'], config['CURRENT_PROJECT_VERSION']
+          assert re.fullmatch(r'\d+\.\d+\.\d+-(ea|dev)\.\d+', version), 'Expected an EA/development version'
+          assert build.isdecimal() and int(build) > 0
+          assert config['MARKETING_VERSION'] == version.split('-')[0]
+          assert os.environ['GITHUB_REF_TYPE'] == 'tag', 'Run this workflow on a release tag'
+          assert os.environ['GITHUB_REF_NAME'] == 'v' + version, 'Tag and version do not match'
+          assert Path(f'docs/releases/v{version}.md').is_file(), 'Release notes are missing'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\nbuild={build}\n')
+          print(f'MineMic {version}, build {build}')
+          PY
+
+  android:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      MINEMIC_NATIVE_JOBS: '2'
+      VERSION: ${{ needs.version.outputs.version }}
+      BUILD_NUMBER: ${{ needs.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check EA signing configuration
+        env:
+          EA_SIGNING_AVAILABLE: ${{ secrets.ANDROID_EA_KEYSTORE_BASE64 != '' }}
+        run: test "$EA_SIGNING_AVAILABLE" = true || { echo 'Configure the existing EA test certificate in ANDROID_EA_KEYSTORE_BASE64.'; exit 1; }
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: zulu
+          java-version: '21'
+          cache: gradle
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install Android toolchain
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-37' 'build-tools;37.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+          printf '\norg.gradle.jvmargs=-Xmx2304m -Dfile.encoding=UTF-8\nkotlin.daemon.jvmargs=-Xmx1536m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> gradle.properties
+      - name: Restore native build cache
+        id: native-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: native/build
+          key: android-release-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
+      - name: Test and build Release APK
+        run: ./gradlew :shared:jvmTest :androidApp:assembleRelease --max-workers=2 --no-parallel --console=plain
+      - name: Sign and verify EA APK
+        env:
+          EA_KEYSTORE_BASE64: ${{ secrets.ANDROID_EA_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          keyfile="$RUNNER_TEMP/minemic-ea.keystore"
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s' "$EA_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          chmod 600 "$keyfile"
+          mkdir -p dist
+          tools="$ANDROID_HOME/build-tools/37.0.0"
+          "$tools/zipalign" -P 16 -f 4 androidApp/build/outputs/apk/release/androidApp-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$keyfile" --ks-key-alias androiddebugkey \
+            --ks-pass pass:android --key-pass pass:android --v4-signing-enabled false \
+            --out "dist/MineMic-$VERSION-android.apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify --verbose --print-certs "dist/MineMic-$VERSION-android.apk" > "$RUNNER_TEMP/apk-verification.txt"
+          "$tools/aapt" dump badging "dist/MineMic-$VERSION-android.apk" > "$RUNNER_TEMP/apk-metadata.txt"
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          temporary = Path(os.environ['RUNNER_TEMP'])
+          certificate = re.search(r'certificate SHA-256 digest: ([a-fA-F0-9]+)', (temporary/'apk-verification.txt').read_text())
+          assert certificate and certificate[1].lower() == '40b125e6849dc96820a88fbb5855901b3ed1c9b87afd164704f1df5c98e739be', 'EA certificate changed'
+          metadata = (temporary/'apk-metadata.txt').read_text()
+          assert "name='com.aiaixyz.minemic'" in metadata
+          assert f"versionName='{os.environ['VERSION']}'" in metadata
+          assert f"versionCode='{os.environ['BUILD_NUMBER']}'" in metadata
+          print('APK signature, application ID and version verified.')
+          PY
+          cd dist
+          sha256sum "MineMic-$VERSION-android.apk" > "MineMic-$VERSION-android.apk.sha256"
+      - name: Save native build cache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: native/build
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MineMic-release-${{ env.VERSION }}-Android
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  ios:
+    needs: version
+    runs-on: macos-26
+    timeout-minutes: 55
+    env:
+      MINEMIC_NATIVE_JOBS: '2'
+      VERSION: ${{ needs.version.outputs.version }}
+      BUILD_NUMBER: ${{ needs.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: zulu
+          java-version: '21'
+          cache: gradle
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Bound build concurrency
+        run: |
+          xcodebuild -version
+          printf '\norg.gradle.jvmargs=-Xmx2304m -Dfile.encoding=UTF-8\nkotlin.daemon.jvmargs=-Xmx1536m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> gradle.properties
+      - name: Restore native build cache
+        id: native-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/build
+            ~/.konan
+          key: ios-release-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
+      - name: Archive without signing credentials
+        run: |
+          set -o pipefail
+          mkdir -p build/ios-release
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
+            -configuration Release -destination 'generic/platform=iOS' -jobs 2 \
+            -archivePath build/ios-release/MineMic.xcarchive \
+            -derivedDataPath build/ios-release/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' DEVELOPMENT_TEAM='' \
+            archive 2>&1 | tee build/ios-release/build.log
+      - name: Verify metadata and package completely unsigned IPA
+        run: |
+          python3 - <<'PY'
+          import os, plistlib
+          from pathlib import Path
+          app = Path('build/ios-release/MineMic.xcarchive/Products/Applications/MineMic.app')
+          extension = app/'PlugIns/MineMicLiveActivity.appex'
+          for bundle, identifier in ((app, 'com.aiaixyz.minemic'), (extension, 'com.aiaixyz.minemic.LiveActivity')):
+              info = plistlib.loads((bundle/'Info.plist').read_bytes())
+              assert info['CFBundleIdentifier'] == identifier
+              assert info['CFBundleShortVersionString'] == os.environ['VERSION'].split('-')[0]
+              assert info['CFBundleVersion'] == os.environ['BUILD_NUMBER']
+              assert info['ITSAppUsesNonExemptEncryption'] is False
+              assert (bundle/'PrivacyInfo.xcprivacy').is_file()
+          assert plistlib.loads((app/'Info.plist').read_bytes())['MineMicVersion'] == os.environ['VERSION']
+          assert (app/'AbseilPrivacy.bundle/PrivacyInfo.xcprivacy').is_file()
+          print('App/extension versions, identifiers, encryption declarations and privacy manifests verified.')
+          PY
+          mkdir -p build/ios-release/package/Payload
+          ditto build/ios-release/MineMic.xcarchive/Products/Applications/MineMic.app build/ios-release/package/Payload/MineMic.app
+          ditto -c -k --norsrc --noextattr --keepParent build/ios-release/package/Payload build/ios-release/input.ipa
+          python3 scripts/package-ios-unsigned.py build/ios-release/input.ipa "dist/MineMic-$VERSION-ios-unsigned.ipa"
+      - name: Save native build cache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/build
+            ~/.konan
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MineMic-release-${{ env.VERSION }}-iOS
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  publish:
+    needs: [version, android, ios]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: MineMic-release-${{ env.VERSION }}-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete release assets
+        run: |
+          cd dist
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 4
+          test -f "MineMic-$VERSION-android.apk"
+          test -f "MineMic-$VERSION-ios-unsigned.ipa"
+          sha256sum -c "MineMic-$VERSION-android.apk.sha256" "MineMic-$VERSION-ios-unsigned.ipa.sha256"
+      - name: Publish verified EA release
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true || { echo 'Refusing to overwrite a published release.'; exit 1; }
+          else
+            gh release create "$tag" --verify-tag --draft --prerelease --title "MineMic v$VERSION" --notes-file "docs/releases/$tag.md"
+          fi
+          gh release upload "$tag" dist/* --clobber
+          gh release edit "$tag" --draft=false --prerelease --latest=false --title "MineMic v$VERSION" --notes-file "docs/releases/$tag.md"

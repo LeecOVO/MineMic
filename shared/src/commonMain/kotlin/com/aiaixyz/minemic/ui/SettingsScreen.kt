@@ -48,13 +48,13 @@ internal fun SettingsScreen(
     Surface(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures {} }
         .onPreviewKeyEvent {
             if (it.key == Key.Escape && it.type == KeyEventType.KeyUp) { onBack(); true } else false
-        }.focusRequester(focus).focusable(), color = MaterialTheme.colorScheme.background) {
+        }.focusRequester(focus).focusable().semantics { paneTitle = "设置" }, color = MaterialTheme.colorScheme.background) {
         Box(Modifier.safeDrawingPadding().fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 560.dp).fillMaxSize()
                 .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 28.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "返回" }) {
+                    IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "返回主页" }.actionHint("关闭设置")) {
                         val color = MaterialTheme.colorScheme.onSurface
                         Canvas(Modifier.size(24.dp)) {
                             val u = size.width / 24f
@@ -64,10 +64,10 @@ internal fun SettingsScreen(
                         }
                     }
                     Text("设置", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(start = 8.dp))
+                        modifier = Modifier.padding(start = 8.dp).semantics { heading() })
                 }
                 Text("外观", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.fillMaxWidth())
+                    modifier = Modifier.fillMaxWidth().semantics { heading() })
                 Text("选择适合你的明暗风格", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp))
@@ -91,18 +91,22 @@ private fun MotionOption(manual: Boolean, system: Boolean, onChange: (Boolean) -
         BoxWithConstraints(Modifier.fillMaxWidth().pressFeedback(interaction, 18.dp)
             .toggleable(value = manual || system, enabled = !system, role = Role.Switch,
                 interactionSource = interaction, indication = null, onValueChange = onChange)
-            .semantics { stateDescription = if (system) "已跟随系统开启" else if (manual) "已开启" else "已关闭" }
+            .semantics {
+                contentDescription = "减少动态效果"
+                stateDescription = if (system) "已跟随系统开启，当前不可修改" else if (manual) "已开启" else "已关闭"
+                onClick(label = if (system) "关闭系统设置后，可在应用内单独控制" else "减少页面移动、缩放和展开动画", action = null)
+            }
             .padding(18.dp)) {
             val detail = if (system) "系统已开启，当前自动遵循。关闭系统设置后，可在此单独控制。"
                 else "减少页面移动、缩放和展开动画。"
             if (maxWidth / LocalDensity.current.fontScale < 180.dp) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ControlHeading("减少动态效果") {
                         MotionSwitch(manual || system, !system)
                     }
                     Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            } else Row(Modifier.clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("减少动态效果", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                     Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -129,6 +133,14 @@ private fun ThemeOption(mode: ThemeMode, selected: Boolean, onClick: () -> Unit)
         .background(fill).border(1.dp, border, RoundedCornerShape(18.dp))
         .selectable(selected, interactionSource = interaction, indication = null, role = Role.RadioButton) {
             if (!selected) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onClick() }
+        }.semantics {
+            contentDescription = mode.label
+            stateDescription = if (selected) "已选择" else "未选择"
+            onClick(label = when (mode) {
+                ThemeMode.SYSTEM -> "随系统自动切换日间与夜间"
+                ThemeMode.LIGHT -> "使用明亮清晰的白色界面"
+                ThemeMode.DARK -> "使用柔和低光的黑色界面"
+            }, action = null)
         }.padding(18.dp)) {
         val detail = when (mode) {
             ThemeMode.SYSTEM -> "随系统自动切换日间与夜间"
@@ -136,13 +148,13 @@ private fun ThemeOption(mode: ThemeMode, selected: Boolean, onClick: () -> Unit)
             ThemeMode.DARK -> "柔和低光的黑色界面"
         }
         if (maxWidth / LocalDensity.current.fontScale < 150.dp) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ControlHeading(mode.label, reserveLabel = "跟随系统") {
                     RadioButton(selected, onClick = null, modifier = Modifier.clearAndSetSemantics {})
                 }
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             }
-        } else Row(verticalAlignment = Alignment.CenterVertically) {
+        } else Row(Modifier.clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically) {
             ThemePreview(mode)
             Column(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(mode.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)

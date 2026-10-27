@@ -31,6 +31,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,17 +52,17 @@ internal fun AboutScreen(
     Surface(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures {} }
         .onPreviewKeyEvent {
             if (active && it.key == Key.Escape && it.type == KeyEventType.KeyUp) { onBack(); true } else false
-        }.focusRequester(focus).focusable(), color = colors.background) {
+        }.focusRequester(focus).focusable().semantics { paneTitle = "关于 MineMic" }, color = colors.background) {
         Box(Modifier.safeDrawingPadding().fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 560.dp).fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     val backInteraction = remember { MutableInteractionSource() }
                     IconButton(onClick = onBack, interactionSource = backInteraction,
-                        modifier = Modifier.pressFeedback(backInteraction).semantics { contentDescription = "返回" }) {
+                        modifier = Modifier.pressFeedback(backInteraction).semantics { contentDescription = "返回主页" }.actionHint("关闭关于 MineMic")) {
                         AboutIcon(AboutGlyph.Back)
                     }
-                    Text("关于", Modifier.weight(1f).padding(start = 8.dp).semantics { heading() },
+                    Text("关于", Modifier.weight(1f).padding(start = 8.dp).clearAndSetSemantics { text = AnnotatedString("关于 MineMic"); heading() },
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 }
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
@@ -74,9 +75,9 @@ internal fun AboutScreen(
                                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                                     val style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
                                     val brand = if (textWidth("MineMic", style) > maxWidth) "Mine\nMic" else "MineMic"
-                                    Text(brand, style = style, modifier = Modifier.semantics {
+                                    Text(brand, style = style, modifier = Modifier.clearAndSetSemantics {
                                         heading()
-                                        contentDescription = "MineMic"
+                                        text = AnnotatedString("MineMic")
                                     })
                                 }
                                 Text("把手机变成电脑麦克风", style = MaterialTheme.typography.bodySmall,
@@ -93,8 +94,8 @@ internal fun AboutScreen(
                                 }
                             }
                             HorizontalDivider(Modifier.padding(vertical = 18.dp), color = colors.outlineVariant)
-                            Text("当前版本", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-                            Text(AppVersion.name, Modifier.padding(top = 5.dp), style = MaterialTheme.typography.titleMedium,
+                            Text("当前版本", modifier = Modifier.clearAndSetSemantics {}, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                            Text(AppVersion.name, Modifier.padding(top = 5.dp).clearAndSetSemantics { text = AnnotatedString("当前版本，${AppVersion.name}") }, style = MaterialTheme.typography.titleMedium,
                                 fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
                             Text(AppVersion.stage, Modifier.padding(top = 5.dp), style = MaterialTheme.typography.bodySmall,
                                 color = colors.primary)
@@ -148,14 +149,14 @@ private fun AboutRow(title: String, detail: String, glyph: AboutGlyph, external:
     Row(Modifier.fillMaxWidth().pressFeedback(interaction, 16.dp)
         .clip(MaterialTheme.shapes.medium).background(fill)
         .clickable(role = Role.Button, interactionSource = interaction, indication = null,
-            onClickLabel = if (external) "在浏览器打开项目主页" else "打开$title") {
+            onClickLabel = if (external) "在浏览器打开 GitHub 项目，LeecOVO/MineMic" else "打开$title，$detail") {
             haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
             onClick()
-        }.heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
+        }.semantics { contentDescription = title }.heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically) {
         val largeText = LocalDensity.current.fontScale >= 1.5f
         if (!largeText) AboutIcon(glyph, Modifier.size(24.dp), accent = true)
-        Column(Modifier.weight(1f).padding(start = if (largeText) 0.dp else 24.dp, end = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Column(Modifier.weight(1f).padding(start = if (largeText) 0.dp else 24.dp, end = 12.dp).clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

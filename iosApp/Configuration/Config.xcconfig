@@ -5,6 +5,9 @@ OTHER_LDFLAGS = $(inherited) -lc++
 EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64
 
 PRODUCT_NAME=MineMic
-PRODUCT_BUNDLE_IDENTIFIER=com.aiaixyz.minemic.MineMic$(TEAM_ID)
+PRODUCT_BUNDLE_IDENTIFIER=com.aiaixyz.minemic
 
 #include "../../version.xcconfig"
+
+// Optional signing settings for this checkout; never commit the local file.
+#include? "Local.xcconfig"

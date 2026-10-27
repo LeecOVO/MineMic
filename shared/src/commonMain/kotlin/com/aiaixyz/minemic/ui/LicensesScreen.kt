@@ -49,7 +49,7 @@ internal fun LicensesScreen(text: String?, error: Boolean, active: Boolean, onBa
                     item {
                         Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large) {
                             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("音频处理组件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("音频处理组件", modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Text("WebRTC、RNNoise 及相关组件的许可声明。选择组件查看完整内容，支持离线阅读。",
                                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -57,14 +57,14 @@ internal fun LicensesScreen(text: String?, error: Boolean, active: Boolean, onBa
                     }
                     when {
                         error -> item {
-                            Text("许可文件暂时无法读取，请重试。", style = MaterialTheme.typography.bodyMedium)
-                            TextButton(onClick = onRetry) { Text("重新读取") }
+                            Text("许可文件暂时无法读取，请重试。", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
+                            TextButton(onClick = onRetry, modifier = Modifier.actionHint("重新读取本地许可文件")) { Text("重新读取") }
                         }
                         bundle == null -> item {
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                Text("正在读取本地许可…", style = MaterialTheme.typography.bodyMedium)
+                                CircularProgressIndicator(Modifier.size(20.dp).clearAndSetSemantics {}, strokeWidth = 2.dp)
+                                Text("正在读取本地许可…", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                         else -> {
@@ -100,11 +100,13 @@ private fun LicenseDetail(document: LicenseDocument, active: Boolean, onBack: ()
     // Separate positions make switching between reflowed and original text reversible.
     val readingScroll = rememberLazyListState()
     val originalScroll = rememberLazyListState()
-    LicensePage(active, onBack) {
+    LicensePage(active, onBack, title = "许可详情") {
         LicenseHeader("许可详情", "返回许可列表", onBack) {
             TextButton(onClick = { original = !original }, modifier = Modifier.semantics {
                 contentDescription = if (original) "切换为阅读排版" else "查看许可原文"
-            }) { Text(if (original) "阅读" else "原文") }
+                stateDescription = if (original) "当前为原文排版" else "当前为阅读排版"
+                onClick(label = if (original) "按段落重新排版，保留阅读位置" else "查看未经重新排版的许可原文", action = null)
+            }) { Text(if (original) "阅读" else "原文", Modifier.clearAndSetSemantics {}) }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = if (original) originalScroll else readingScroll,
             contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp),
@@ -126,13 +128,13 @@ private fun LicenseDetail(document: LicenseDocument, active: Boolean, onBack: ()
 }
 
 @Composable
-private fun LicensePage(active: Boolean, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+private fun LicensePage(active: Boolean, onBack: () -> Unit, title: String = "第三方许可", content: @Composable ColumnScope.() -> Unit) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(active) { if (active) focus.requestFocus() }
     Surface(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures {} }
         .onPreviewKeyEvent {
             if (active && it.key == Key.Escape && it.type == KeyEventType.KeyUp) { onBack(); true } else false
-        }.focusRequester(focus).focusable(), color = MaterialTheme.colorScheme.background) {
+        }.focusRequester(focus).focusable().semantics { paneTitle = title }, color = MaterialTheme.colorScheme.background) {
         Box(Modifier.safeDrawingPadding().fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 560.dp).fillMaxSize(), content = content)
         }

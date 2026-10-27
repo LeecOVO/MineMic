@@ -205,10 +205,10 @@
 				};
 			};
 			buildConfigurationList = 3E171FB0C5798D515574BF82 /* Build configuration list for PBXProject "iosApp" */;
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = 70DEBA3B0537B27E330D2720;
@@ -306,7 +306,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.MineMic$(TEAM_ID).LiveActivity";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.LiveActivity";
 				PRODUCT_NAME = MineMicLiveActivity;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -458,7 +458,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.MineMic$(TEAM_ID).LiveActivity";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.aiaixyz.minemic.LiveActivity";
 				PRODUCT_NAME = MineMicLiveActivity;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

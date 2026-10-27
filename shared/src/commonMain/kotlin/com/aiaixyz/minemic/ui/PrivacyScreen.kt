@@ -17,9 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aiaixyz.minemic.AppVersion
@@ -31,7 +29,7 @@ internal fun PrivacyScreen(document: PrivacyDocument, onBack: () -> Unit, onCont
     Surface(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures {} }
         .onPreviewKeyEvent {
             if (it.key == Key.Escape && it.type == KeyEventType.KeyUp) { onBack(); true } else false
-        }.focusRequester(focus).focusable(), color = MaterialTheme.colorScheme.background) {
+        }.focusRequester(focus).focusable().semantics { paneTitle = document.title }, color = MaterialTheme.colorScheme.background) {
         Box(Modifier.safeDrawingPadding().fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 560.dp).fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
@@ -76,8 +74,8 @@ internal fun PrivacyScreen(document: PrivacyDocument, onBack: () -> Unit, onCont
                                 }
                             }
                         }
-                        TextButton(onClick = onContact, modifier = Modifier.fillMaxWidth()) {
-                            Text("项目反馈（GitHub，公开）")
+                        TextButton(onClick = onContact, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "项目反馈，GitHub，公开" }.actionHint("在浏览器打开 GitHub，提交内容会公开")) {
+                            Text("项目反馈（GitHub，公开）", Modifier.clearAndSetSemantics {})
                         }
                     }
                 }
@@ -104,7 +102,7 @@ private fun PolicyParagraph(text: String) {
 
 @Composable
 private fun PolicyField(label: String, text: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         PolicyParagraph(text)
     }

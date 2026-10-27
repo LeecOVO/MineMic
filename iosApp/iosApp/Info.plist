@@ -4,6 +4,12 @@
     <dict>
     <key>MineMicVersion</key>
     <string>$(MINEMIC_VERSION)</string>
+        <key>ITSAppUsesNonExemptEncryption</key>
+        <false/>
+        <key>CFBundleDevelopmentRegion</key>
+        <string>$(DEVELOPMENT_LANGUAGE)</string>
+        <key>CFBundleLocalizations</key>
+        <array><string>zh-Hans</string></array>
         <key>NSMicrophoneUsageDescription</key>
         <string>MineMic 将手机麦克风音频传输到你连接的电脑。</string>
         <key>NSLocalNetworkUsageDescription</key>

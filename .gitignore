@@ -19,6 +19,7 @@ captures
 node_modules/
 
 # Local tooling and signing material
+iosApp/Configuration/Local.xcconfig
 *.log
 *.jks
 *.keystore

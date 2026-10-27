@@ -42,7 +42,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +85,7 @@ internal enum class SlidingChoiceStyle { Default, Pairing }
 @Composable
 internal fun SlidingChoice(
     labels: List<String>, position: Float, enabled: Boolean,
+    hints: List<String> = labels.map { "选择$it" },
     onSelect: (Int) -> Unit, onInteraction: () -> Unit = {},
     onDragPosition: ((Float) -> Unit)? = null,
     selectedIndex: Int = position.roundToInt(),
@@ -94,7 +95,7 @@ internal fun SlidingChoice(
     compact: Boolean = false,
     reducedMotion: Boolean = LocalReducedMotion.current,
 ) {
-    require(labels.size == 2)
+    require(labels.size == 2 && hints.size == labels.size)
     val latestPosition by rememberUpdatedState(position)
     val latestSelect by rememberUpdatedState(onSelect)
     val latestDrag by rememberUpdatedState(onDragPosition)
@@ -189,10 +190,14 @@ internal fun SlidingChoice(
                     .selectable(selected = selectedIndex == index, enabled = enabled,
                         role = Role.Tab, interactionSource = source, indication = null,
                         onClick = { latestInteraction(); latestSelect(index) })
+                    .semantics {
+                        contentDescription = label
+                        onClick(label = hints[index], action = null)
+                    }
                     .heightIn(min = if (compact) 24.dp else 46.dp)
                     .padding(horizontal = if (compact) 6.dp else 8.dp, vertical = if (compact) 2.dp else 12.dp),
                     contentAlignment = Alignment.Center) {
-                    Text(label, style = MaterialTheme.typography.labelLarge,
+                    Text(label, modifier = Modifier.clearAndSetSemantics {}, style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = if (nativeGlass) Color.Transparent else lerp(colors.onSurfaceVariant,
                             when {
@@ -231,10 +236,13 @@ internal fun DisclosureCard(
             Box(Modifier.fillMaxWidth().pressFeedback(source).clip(RoundedCornerShape(20.dp))
                 .clickable(interactionSource = source, indication = null, role = Role.Button,
                     onClickLabel = if (expanded) "收起$title" else "展开$title", onClick = onToggle)
-                .semantics { stateDescription = if (expanded) "已展开" else "已收起" }
+                .semantics {
+                    contentDescription = title
+                    stateDescription = (if (expanded) "已展开" else "已收起") + "，" + summary.replace("dB", "分贝").replace(" · ", "，")
+                }
                 .heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp), contentAlignment = Alignment.CenterStart) {
                 if (LocalDensity.current.fontScale >= 1.5f) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -242,7 +250,7 @@ internal fun DisclosureCard(
                         }
                         Text(summary, style = MaterialTheme.typography.bodySmall, color = color)
                     }
-                } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                } else Row(Modifier.clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerLow), contentAlignment = Alignment.Center) { icon() }
                     Column(Modifier.weight(1f).animateContentSize(tween(if (reducedMotion) 0 else 180, easing = FastOutSlowInEasing)),

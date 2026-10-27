@@ -35,20 +35,26 @@ struct MineMicLiveActivity: Widget {
                             .font(.headline).lineLimit(1).privacySensitive()
                         Text(context.isStale ? "状态待刷新，请打开 MineMic 查看" : context.state.status)
                             .font(.caption).foregroundStyle(.secondary)
-                    }
+                    }.accessibilityElement(children: .combine)
                     Spacer(minLength: 6)
                     Text(context.state.startedAt, style: .timer)
                         .font(.caption.monospacedDigit()).multilineTextAlignment(.trailing)
                         .accessibilityLabel("连接时长")
+                        .accessibilityValue(Text(context.state.startedAt, style: .timer))
                 }
                 HStack(spacing: 12) {
                     Button(intent: SetMineMicMuteIntent(sessionID: context.attributes.sessionID, muted: !context.state.muted)) {
                         Label(context.state.muted ? "取消静音" : "静音", systemImage: context.state.muted ? "mic.fill" : "mic.slash.fill")
                             .frame(maxWidth: .infinity)
-                    }.disabled(context.isStale || context.state.phase == "disconnecting")
+                    }.accessibilityLabel(context.state.muted ? "取消麦克风静音" : "麦克风静音")
+                        .accessibilityValue(context.state.muted ? "当前已静音" : "当前允许传输声音")
+                        .accessibilityHint(context.state.muted ? "恢复传输麦克风声音" : "暂停传输麦克风声音")
+                        .disabled(context.isStale || context.state.phase == "disconnecting")
                     Button(intent: DisconnectMineMicIntent(sessionID: context.attributes.sessionID)) {
                         Label("断开", systemImage: "xmark.circle").frame(maxWidth: .infinity)
-                    }.disabled(context.state.phase == "disconnecting")
+                    }.accessibilityLabel("断开连接")
+                        .accessibilityHint("停止传输并释放电脑占用")
+                        .disabled(context.state.phase == "disconnecting")
                 }.buttonStyle(.bordered).tint(.mint)
             }
             .padding(16)
@@ -62,6 +68,8 @@ struct MineMicLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(context.state.startedAt, style: .timer).font(.caption.monospacedDigit())
+                        .accessibilityLabel("连接时长")
+                        .accessibilityValue(Text(context.state.startedAt, style: .timer))
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(context.state.pcName.isEmpty ? "MineMic" : context.state.pcName).font(.headline).lineLimit(1)
@@ -72,11 +80,16 @@ struct MineMicLiveActivity: Widget {
                         HStack {
                             Button(intent: SetMineMicMuteIntent(sessionID: context.attributes.sessionID, muted: !context.state.muted)) {
                                 Label(context.state.muted ? "取消静音" : "静音", systemImage: context.state.muted ? "mic.fill" : "mic.slash.fill")
-                            }.disabled(context.isStale || context.state.phase == "disconnecting")
+                            }.accessibilityLabel(context.state.muted ? "取消麦克风静音" : "麦克风静音")
+                                .accessibilityValue(context.state.muted ? "当前已静音" : "当前允许传输声音")
+                                .accessibilityHint(context.state.muted ? "恢复传输麦克风声音" : "暂停传输麦克风声音")
+                                .disabled(context.isStale || context.state.phase == "disconnecting")
                             Spacer()
                             Button(intent: DisconnectMineMicIntent(sessionID: context.attributes.sessionID)) {
                                 Label("断开", systemImage: "xmark.circle")
-                            }.disabled(context.state.phase == "disconnecting")
+                            }.accessibilityLabel("断开连接")
+                                .accessibilityHint("停止传输并释放电脑占用")
+                                .disabled(context.state.phase == "disconnecting")
                         }.buttonStyle(.bordered).tint(.mint)
                     }
                 }
@@ -85,11 +98,11 @@ struct MineMicLiveActivity: Widget {
             } compactTrailing: {
                 Image(systemName: context.state.muted ? "mic.slash.fill" : (context.state.recording ? "mic.fill" : "exclamationmark.triangle.fill"))
                     .foregroundStyle(context.isStale ? .gray : .mint)
-                    .accessibilityLabel(context.isStale ? "状态待刷新" : context.state.status)
+                    .accessibilityLabel("MineMic，" + (context.isStale ? "状态待刷新，请打开 MineMic 查看" : context.state.status))
             } minimal: {
                 Image(systemName: context.state.muted ? "mic.slash.fill" : (context.state.recording ? "mic.fill" : "exclamationmark.triangle.fill"))
                     .foregroundStyle(context.isStale ? .gray : .mint)
-                    .accessibilityLabel(context.isStale ? "状态待刷新" : context.state.status)
+                    .accessibilityLabel("MineMic，" + (context.isStale ? "状态待刷新，请打开 MineMic 查看" : context.state.status))
             }.keylineTint(.mint)
         }
     }

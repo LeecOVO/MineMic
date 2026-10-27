@@ -161,11 +161,11 @@ fun MineMicScreen(
                         }
                         BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp)) {
                             val version: @Composable () -> Unit = {
-                                Text(AppVersion.name, style = MaterialTheme.typography.labelSmall,
+                                Text(AppVersion.name, modifier = Modifier.clearAndSetSemantics { text = AnnotatedString("版本，${AppVersion.name}") }, style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             val helpButton: @Composable () -> Unit = {
-                                TextButton(onClick = { dismissInput(); help = true }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                                TextButton(onClick = { dismissInput(); help = true }, modifier = Modifier.actionHint("查看连接前、连接后和结束使用的说明"), contentPadding = PaddingValues(horizontal = 10.dp)) {
                                     Text("连接帮助", style = MaterialTheme.typography.labelMedium)
                                 }
                             }
@@ -184,7 +184,7 @@ fun MineMicScreen(
                     // outside the scrolling form so it stays immediately above the keyboard.
                     if (inputFocused && !state.ownsPc) Surface(color = MaterialTheme.colorScheme.surface) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = dismissInput) { Text("完成", fontWeight = FontWeight.SemiBold) }
+                            TextButton(onClick = dismissInput, modifier = Modifier.semantics { contentDescription = "完成输入" }.actionHint("收起键盘")) { Text("完成", Modifier.clearAndSetSemantics {}, fontWeight = FontWeight.SemiBold) }
                         }
                     }
                 }
@@ -201,7 +201,7 @@ fun MineMicScreen(
                 )
             }
             if (help) AlertDialog(
-                onDismissRequest = { help = false }, title = { Text("连接帮助") },
+                onDismissRequest = { help = false }, title = { Text("连接帮助", Modifier.semantics { heading() }) },
                 text = {
                     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         HelpItem("连接前", "手机和电脑需在同一局域网。打开 MineMic PC 并开启接收，再输入电脑上的配对码。找不到电脑时，可以切换到 IP 地址。")
@@ -210,7 +210,7 @@ fun MineMicScreen(
                         HelpItem("回声抑制", "新版 Windows PC 默认跟随系统外放设备；若游戏单独指定了输出设备，可在 PC 的“外放参考”中选择。参考暂不可用时，麦克风仍会继续传输。")
                     }
                 },
-                confirmButton = { TextButton(onClick = { help = false }) { Text("知道了") } },
+                confirmButton = { TextButton(onClick = { help = false }, modifier = Modifier.actionHint("关闭连接帮助")) { Text("知道了") } },
             )
             PageMotion(settingsMotion) {
                 SettingsScreen(themeMode, onThemeModeChange,
@@ -258,10 +258,10 @@ private fun HomeHeader(onSettings: () -> Unit, onAbout: () -> Unit) {
 @Composable
 private fun HomeHeaderActions(onSettings: () -> Unit, onAbout: () -> Unit) {
     Row {
-        IconButton(onClick = onSettings, modifier = Modifier.semantics { contentDescription = "设置" }) {
+        IconButton(onClick = onSettings, modifier = Modifier.semantics { contentDescription = "设置" }.actionHint("打开设置")) {
             ToolIcon(Glyph.Settings, MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        IconButton(onClick = onAbout, modifier = Modifier.semantics { contentDescription = "关于 MineMic" }) {
+        IconButton(onClick = onAbout, modifier = Modifier.semantics { contentDescription = "关于 MineMic" }.actionHint("打开关于 MineMic")) {
             ToolIcon(Glyph.Info, MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -298,13 +298,15 @@ private fun PairingPanel(
     LaunchedEffect(pager.targetPage) { dismissInput() }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.8).sp)
-        Text(if (textWidth("连接电脑", style) > maxWidth) "连接\n电脑" else "连接电脑", style = style)
+        Text(if (textWidth("连接电脑", style) > maxWidth) "连接\n电脑" else "连接电脑", style = style,
+            modifier = Modifier.clearAndSetSemantics { text = AnnotatedString("连接电脑"); heading() })
     }
     Text("你的声音，从这里传到电脑。", Modifier.padding(top = 8.dp, bottom = 24.dp),
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().padding(20.dp)) {
             SlidingChoice(listOf("配对码", "IP 地址"), pager.currentPage + pager.currentPageOffsetFraction,
+                hints = listOf("使用电脑显示的 6 位数字配对码连接", "输入电脑 IP 直接连接，无需配对码"),
                 enabled = !pending,
                 style = SlidingChoiceStyle.Pairing,
                 nativeMaterialVisible = nativeMaterialVisible,
@@ -323,7 +325,7 @@ private fun PairingPanel(
                     easing = FastOutSlowInEasing)), verticalAlignment = Alignment.Top,
                 key = { it }) { page ->
                 val isIp = page == 1
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().then(if (page != pager.settledPage) Modifier.clearAndSetSemantics {} else Modifier)) {
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                         val title = if (!isIp) "电脑上的 6 位配对码" else if (ipv6) "IPv6 地址" else "IPv4 地址"
                         val labelStyle = MaterialTheme.typography.labelLarge
@@ -340,10 +342,10 @@ private fun PairingPanel(
                         }
                         val versionContent: @Composable () -> Unit = {
                             if (isIp) Box(Modifier.width(switchWidth).semantics {
-                                contentDescription = "IP 版本"
-                                stateDescription = if (ipv6) "IPv6 已开启" else "IPv6 已关闭，使用 IPv4"
+                                isTraversalGroup = true
                             }) {
                                 SlidingChoice(listOf("IPv4", "IPv6"), if (ipv6) 1f else 0f,
+                                    hints = listOf("使用 IPv4 地址连接电脑", "使用 IPv6 地址连接电脑"),
                                     enabled = !pending && !pageMoving,
                                     onSelect = { index -> dismissInput(); ipv6 = index == 1 },
                                     onInteraction = dismissInput,
@@ -374,10 +376,12 @@ private fun PairingPanel(
                         },
                         modifier = Modifier.fillMaxWidth().onFocusChanged { onInputFocusChange(it.isFocused) }.semantics {
                             contentDescription = if (!isIp) "6 位配对码" else if (ipv6) "电脑的 IPv6 地址" else "电脑的 IPv4 地址"
+                            editableText = spelledInput(if (isIp) host else code)
+                            onClick(label = if (!isIp) "输入电脑显示的 6 位数字" else if (ipv6) "输入包含冒号的 IPv6 地址" else "输入点分十进制地址", action = null)
                         },
                         placeholder = {
                             Text(if (!isIp) "000000" else if (ipv6) "fd12:3456::10" else "192.168.1.100", color = MaterialTheme.colorScheme.outline,
-                                maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
+                                modifier = Modifier.clearAndSetSemantics {}, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
                                 style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Monospace,
                                     letterSpacing = if (isIp) 0.sp else 5.sp))
                         },
@@ -410,9 +414,18 @@ private fun PairingPanel(
             val source = remember { MutableInteractionSource() }
             Button(onClick = connect, enabled = enabled && !pending && !moving && valid,
                 interactionSource = source,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).pressFeedback(source), shape = MaterialTheme.shapes.small) {
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).pressFeedback(source)
+                    .actionHint("连接电脑并开始传输手机麦克风声音")
+                    .semantics {
+                        stateDescription = when {
+                            pending -> "正在处理连接"
+                            !enabled -> "当前不可连接"
+                            !valid -> if (manual) "请输入有效的电脑 IP 地址" else "请输入完整的 6 位配对码"
+                            else -> "可连接"
+                        }
+                    }, shape = MaterialTheme.shapes.small) {
                 if (pending) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp,
+                    CircularProgressIndicator(Modifier.size(18.dp).clearAndSetSemantics {}, strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(10.dp))
                 }
@@ -429,7 +442,7 @@ private fun PairingPanel(
             }
             Reveal(state.phase == ConnectionPhase.SEARCHING || state.phase == ConnectionPhase.CONNECTING) {
                 TextButton(onClick = { dismissInput(); onCancel() }, enabled = enabled,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("取消连接") }
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp).actionHint("停止本次查找或连接尝试")) { Text("取消连接") }
             }
         }
     }
@@ -484,8 +497,9 @@ private fun SessionPanel(
                     interactionSource = muteSource,
                     modifier = Modifier.sizeIn(minWidth = 112.dp, minHeight = 112.dp).pressFeedback(muteSource).semantics {
                         role = Role.Switch
-                        stateDescription = if (state.muted) "已静音" else "未静音"
-                        contentDescription = if (state.muted) "取消麦克风静音" else "麦克风静音"
+                        stateDescription = if (state.muted) "已开启，声音暂停传输" else "已关闭，允许传输声音"
+                        contentDescription = "麦克风静音"
+                        onClick(label = if (state.muted) "恢复传输麦克风声音" else "暂停传输麦克风声音", action = null)
                         toggleableState = if (state.muted) androidx.compose.ui.state.ToggleableState.On else androidx.compose.ui.state.ToggleableState.Off
                     },
                     shape = CircleShape,
@@ -496,27 +510,28 @@ private fun SessionPanel(
                         ToolIcon(if (state.muted) Glyph.MicOff else Glyph.Mic, LocalContentColor.current, Modifier.size(48.dp))
                     }
                 }
-                Text(if (state.muted) "点击取消静音" else "点击静音", Modifier.padding(top = 14.dp),
+                Text(if (state.muted) "点击取消静音" else "点击静音", Modifier.padding(top = 14.dp).clearAndSetSemantics {},
                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(28.dp))
                 AudioMeter(level = { if (state.muted) 0f else audioLevel?.invoke() ?: state.level }, active = !state.muted)
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp).clearAndSetSemantics {}, horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("输入电平", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(if (state.muted) "静音" else "实时",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                StatusNote(state.message, progress = reconnecting || disconnecting)
+                StatusNote(state.message, progress = reconnecting || disconnecting, announce = false)
                 if (state.phase == ConnectionPhase.CONNECTED) {
                     FilledTonalButton(onClick = onRetryMicrophone, enabled = enabled,
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).heightIn(min = 48.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).heightIn(min = 48.dp).actionHint("重新请求使用麦克风"),
                         shape = MaterialTheme.shapes.small) { Text("重新启用麦克风") }
                 }
                 Row(
                     Modifier.fillMaxWidth().padding(top = 8.dp).toggleable(
                         value = state.muted, enabled = enabled && !disconnecting,
                         role = Role.Switch, onValueChange = onMutedChange,
-                    ),
+                    ).semantics { stateDescription = if (state.muted) "已开启" else "已关闭" }
+                        .actionHint("重连后保持麦克风静音"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("恢复时静音", Modifier.weight(1f).padding(end = 8.dp),
@@ -531,9 +546,10 @@ private fun SessionPanel(
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             ToolIcon(Glyph.Lock, MaterialTheme.colorScheme.onSurfaceVariant, Modifier.size(14.dp))
-            Text("由本机独占", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("由本机独占", modifier = Modifier.clearAndSetSemantics { text = AnnotatedString("当前电脑仅接收这台手机") }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         TextButton(onClick = onDisconnect, enabled = enabled && !disconnecting,
+            modifier = Modifier.actionHint("停止传输并释放电脑占用"),
             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
             Text(if (disconnecting) "正在断开…" else "断开连接", style = MaterialTheme.typography.labelLarge)
         }
@@ -553,6 +569,7 @@ private fun AudioMeter(level: () -> Float, active: Boolean) {
     val colors = MaterialTheme.colorScheme
     Canvas(Modifier.fillMaxWidth().height(24.dp).semantics {
         contentDescription = "麦克风输入电平"
+        stateDescription = if (!active) "已静音" else "百分之 ${(value * 100).roundToInt()}"
         progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f)
     }) {
         val count = 36
@@ -594,9 +611,10 @@ private fun EnhancementPanel(
                 state.noiseSuppression, enabled, onNoise)
             Reveal(state.noiseSuppression) {
                 Column(Modifier.padding(start = nestedInset, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("降噪场景", style = MaterialTheme.typography.labelMedium,
+                    Text("降噪场景", modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     SlidingChoice(listOf("通用", "桌面游戏"), if (state.deskNoiseSuppression) 1f else 0f, enabled,
+                        hints = listOf("选择通用降噪，适合日常通话与持续背景声", "选择桌面游戏降噪，减轻键盘、鼠标与桌面摩擦声"),
                         onSelect = { onDeskNoise(it == 1) }, onInteraction = onInteraction)
                     AnimatedContent(state.deskNoiseSuppression, transitionSpec = {
                         (fadeIn(tween(if (reducedMotion) 0 else 160, delayMillis = if (reducedMotion) 0 else 50)) togetherWith fadeOut(tween(if (reducedMotion) 0 else 100)))
@@ -637,12 +655,12 @@ private fun ProcessingStatusPanel(state: MicState) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("处理监测", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                        Text("处理监测", modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
                         if (stacked) ProcessingPhase(phase, running && selected)
                     }
                     if (!stacked) ProcessingPhase(phase, running && selected)
                     IconButton(onClick = { showDetail = true }, modifier = Modifier.size(48.dp)
-                        .semantics { contentDescription = "查看音频处理详情" }) {
+                        .semantics { contentDescription = "查看音频处理详情" }.actionHint("查看指标含义与当前处理说明")) {
                         ToolIcon(Glyph.Info, colors.onSurfaceVariant, Modifier.size(18.dp))
                     }
                 }
@@ -680,9 +698,9 @@ private fun ProcessingStatusPanel(state: MicState) {
         }
     }
     if (showDetail) AlertDialog(onDismissRequest = { showDetail = false },
-        title = { Text("音频处理详情") },
+        title = { Text("音频处理详情", Modifier.semantics { heading() }) },
         text = { Text("参考流表示收到的完整立体声参考帧；回声处理表示最近一秒成功使用回声抑制的帧占比，并非消除效果评分。参考暂不可用时继续传输原声。\n\n${state.enhancementMessage}") },
-        confirmButton = { TextButton(onClick = { showDetail = false }) { Text("知道了") } })
+        confirmButton = { TextButton(onClick = { showDetail = false }, modifier = Modifier.actionHint("关闭音频处理详情")) { Text("知道了") } })
 }
 
 @Composable
@@ -706,7 +724,8 @@ private fun metricValue(value: String, unit: String): AnnotatedString = buildAnn
 
 @Composable
 private fun ProcessingMetric(label: String, value: String, unit: String, modifier: Modifier, inline: Boolean = false) {
-    val accessible = modifier.semantics(mergeDescendants = true) {}
+    val spokenValue = if (value == "—") "暂无数据" else if (unit == "%") "百分之 $value" else "每秒 $value 帧"
+    val accessible = modifier.clearAndSetSemantics { text = AnnotatedString("$label，$spokenValue") }
     if (inline) {
         Row(accessible, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -741,21 +760,22 @@ private fun GainControl(gain: Int, enabled: Boolean, onChange: (Float) -> Unit) 
             if (textWidth("收音增强", titleStyle) + textWidth("+18 dB", badgeStyle) + 32.dp <= maxWidth) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("收音增强", Modifier.weight(1f), style = titleStyle)
+                    Text("收音增强", Modifier.weight(1f).clearAndSetSemantics {}, style = titleStyle)
                     GainBadge(gain)
                 }
             } else Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("收音增强", style = titleStyle)
+                Text("收音增强", Modifier.clearAndSetSemantics {}, style = titleStyle)
                 GainBadge(gain)
             }
         }
         Slider(value = if (engaged) gestureValue ?: restingValue else restingValue, onValueChange = {
                 gestureValue = it
                 onChange(it.roundToInt().coerceIn(0, 18).toFloat())
-            }, valueRange = 0f..18f, enabled = enabled, interactionSource = source,
+            }, valueRange = 0f..18f, steps = 17, enabled = enabled, interactionSource = source,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics {
                 contentDescription = "收音增强"
                 stateDescription = if (gain == 0) "关闭，0 分贝" else "增加 $gain 分贝"
+                setProgress(label = "调整收音增强，范围 0 到 18 分贝，每次 1 分贝", action = null)
             },
             thumb = {
                 Canvas(Modifier.size(28.dp)) {
@@ -776,7 +796,7 @@ private fun GainControl(gain: Int, enabled: Boolean, onChange: (Float) -> Unit) 
                         Offset(start, center.y), Offset(start + (end - start) * fraction, center.y), size.height, StrokeCap.Round)
                 }
             })
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth().clearAndSetSemantics {}, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("关闭", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
             Text("+18 dB", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
         }
@@ -799,7 +819,7 @@ private fun GainControl(gain: Int, enabled: Boolean, onChange: (Float) -> Unit) 
 @Composable
 private fun GainBadge(gain: Int) {
     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
-        Text(if (gain == 0) "0 dB" else "+$gain dB", Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+        Text(if (gain == 0) "0 dB" else "+$gain dB", Modifier.padding(horizontal = 10.dp, vertical = 5.dp).clearAndSetSemantics {},
             style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer,
             fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
     }
@@ -808,8 +828,8 @@ private fun GainBadge(gain: Int) {
 @Composable
 private fun GainReset(enabled: Boolean, onClick: () -> Unit) {
     TextButton(onClick = onClick, enabled = enabled, contentPadding = PaddingValues(horizontal = 8.dp),
-        modifier = Modifier.semantics { contentDescription = "恢复 0 dB，关闭收音增强" }) {
-        Text("恢复 0 dB", style = MaterialTheme.typography.labelMedium)
+        modifier = Modifier.semantics { contentDescription = "恢复 0 分贝" }.actionHint("关闭收音增强")) {
+        Text("恢复 0 dB", modifier = Modifier.clearAndSetSemantics {}, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -820,7 +840,8 @@ private fun LockScreenPanel(state: LockScreenState, onInteraction: () -> Unit, o
         when { !state.available -> "当前不可用"; state.enabled -> "已开启"; else -> "已关闭" },
         expanded, onToggle = { onInteraction(); expanded = !expanded },
         icon = { ToolIcon(Glyph.Lock, MaterialTheme.colorScheme.primary, Modifier.size(20.dp)) }) {
-        SettingSwitch("在锁屏上显示", state.enabled, state.available || state.enabled, onChange)
+        SettingSwitch("在锁屏上显示", state.enabled, state.available || state.enabled, onChange,
+            hint = "在锁屏和灵动岛显示连接状态与快捷操作，关闭不影响录音")
         Text("仅展示连接状态与快捷操作，关闭不影响录音。", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(state.message, style = MaterialTheme.typography.bodySmall,
@@ -838,7 +859,7 @@ private fun EnhancementRow(label: String, detail: String, icon: Glyph, checked: 
 @Composable
 private fun SettingSwitch(
     label: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit,
-    detail: String? = null, icon: (@Composable () -> Unit)? = null,
+    detail: String? = null, hint: String? = detail, icon: (@Composable () -> Unit)? = null,
 ) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
@@ -864,9 +885,13 @@ private fun SettingSwitch(
             role = Role.Switch, onValueChange = {
                 haptic.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
                 onChange(it)
-            }).padding(vertical = 14.dp)) {
+            }).semantics {
+            contentDescription = label
+            stateDescription = if (checked) "已开启" else "已关闭"
+            onClick(label = hint ?: if (checked) "关闭$label" else "开启$label", action = null)
+        }.padding(vertical = 14.dp)) {
         if (LocalDensity.current.fontScale >= 1.5f) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ControlHeading(label, reserveLabel = if (detail != null) "回声抑制" else label, style = titleStyle, control = toggle)
                 detailContent()
             }
@@ -875,7 +900,7 @@ private fun SettingSwitch(
                 icon()
                 Spacer(Modifier.width(16.dp))
             }
-            Column(Modifier.weight(1f).padding(end = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f).padding(end = 10.dp).clearAndSetSemantics {}, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = titleStyle)
                 detailContent()
             }
@@ -885,11 +910,11 @@ private fun SettingSwitch(
 }
 
 @Composable
-private fun StatusNote(message: String, error: Boolean = false, progress: Boolean = false) {
+private fun StatusNote(message: String, error: Boolean = false, progress: Boolean = false, announce: Boolean = true) {
     val color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-    Row(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+    Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { if (announce) liveRegion = LiveRegionMode.Polite },
         horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.Top) {
-        if (progress) CircularProgressIndicator(Modifier.padding(top = 2.dp).size(15.dp), strokeWidth = 1.5.dp, color = color)
+        if (progress) CircularProgressIndicator(Modifier.padding(top = 2.dp).size(15.dp).clearAndSetSemantics {}, strokeWidth = 1.5.dp, color = color)
         else ToolIcon(Glyph.Info, color, Modifier.padding(top = 1.dp).size(16.dp))
         Text(message, style = MaterialTheme.typography.bodySmall, color = color)
     }
@@ -898,7 +923,7 @@ private fun StatusNote(message: String, error: Boolean = false, progress: Boolea
 @Composable
 private fun HelpItem(title: String, detail: String) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(title, modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         Text(detail, style = MaterialTheme.typography.bodyMedium)
     }
 }
