@@ -1,4 +1,4 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 
 package com.aiaixyz.minemic.ui
 
@@ -6,40 +6,74 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import platform.Foundation.NSSelectorFromString
-import platform.Foundation.valueForKey
+import kotlinx.cinterop.toKString
+import platform.Foundation.*
+import platform.darwin.NSObject
+import platform.objc.class_getInstanceMethod
+import platform.objc.method_getNumberOfArguments
+import platform.objc.method_getTypeEncoding
+import platform.objc.object_getClass
 import platform.UIKit.*
+import platform.posix.fflush
 
 /** UIKit entry-point tests; these do not simulate or certify system VoiceOver gestures. */
 class NativeAccessibleControlsTest {
+    private fun trace(stage: String) {
+        println("[NativeControls] $stage")
+        // Keep the last completed stage in simulator logs even if native code terminates.
+        fflush(null)
+    }
+
+    private fun invokeVoidSelector(receiver: NSObject, name: String) {
+        val selector = NSSelectorFromString(name)
+        val method = requireNotNull(class_getInstanceMethod(object_getClass(receiver), selector)) { "Missing selector: $name" }
+        assertTrue(method_getTypeEncoding(method)?.toKString()?.startsWith("v") == true,
+            "Expected a void Objective-C action: $name")
+        assertEquals(2U, method_getNumberOfArguments(method), "Only self and selector arguments are expected: $name")
+        // performSelector returns id. Calling a void action through it would make the Kotlin
+        // bridge interpret an unspecified return register as an Objective-C object.
+        // Apple's void-returning API also accepts a selector without explicit arguments.
+        // On the main thread with waitUntilDone=true, it invokes the action synchronously.
+        receiver.performSelectorOnMainThread(selector, withObject = null, waitUntilDone = true)
+    }
+
     @Test
     fun objectiveCAdjustableSelectorsWalkEveryGainValueInBothDirections() {
+        trace("adjustable test entered; mainThread=${NSThread.isMainThread}")
+        assertTrue(NSThread.isMainThread, "UIKit controls must be tested on the main thread")
         val changed = mutableListOf<Int>()
+        trace("before UISlider construction")
         val slider = NativeGainSlider()
+        trace("after UISlider construction")
         slider.configure(0, true, "收音增强", "范围 0 到 18 分贝", changed::add)
+        trace("after UISlider configuration")
         assertEquals("minemic.gain.native", slider.valueForKey("accessibilityIdentifier"))
         val increment = NSSelectorFromString("accessibilityIncrement")
         val decrement = NSSelectorFromString("accessibilityDecrement")
         assertTrue(slider.respondsToSelector(increment))
         assertTrue(slider.respondsToSelector(decrement))
+        trace("before first void selector invocation")
         for (expected in 1..18) {
             // Objective-C selector dispatch, rather than a Kotlin-only function call.
-            slider.performSelector(increment)
+            invokeVoidSelector(slider, "accessibilityIncrement")
+            if (expected == 1) trace("first increment dispatched and returned")
             assertEquals(expected.toFloat(), slider.value)
             assertEquals(expected, changed.last())
             assertEquals("增加 $expected 分贝", slider.accessibilityValue)
         }
-        slider.performSelector(increment)
+        trace("all 18 increments verified")
+        invokeVoidSelector(slider, "accessibilityIncrement")
         assertEquals((1..18).toList(), changed)
         for (expected in 17 downTo 0) {
-            slider.performSelector(decrement)
+            invokeVoidSelector(slider, "accessibilityDecrement")
             assertEquals(expected.toFloat(), slider.value)
             assertEquals(expected, changed.last())
             assertEquals(if (expected == 0) "0 分贝，不增强收音" else "增加 $expected 分贝", slider.accessibilityValue)
         }
-        slider.performSelector(decrement)
+        invokeVoidSelector(slider, "accessibilityDecrement")
         assertEquals((1..18).toList() + (17 downTo 0).toList(), changed)
         slider.dispose()
+        trace("all decrements, endpoints, and release verified")
     }
 
     @Test

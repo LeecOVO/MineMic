@@ -34,11 +34,14 @@ jobs:
         run: |
           printf '\norg.gradle.jvmargs=-Xmx2304m -Dfile.encoding=UTF-8\nkotlin.daemon.jvmargs=-Xmx1536m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> gradle.properties
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: native-cache
         with:
           path: |
             native/build
             ~/.konan
-          key: ios-release-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
+          key: ios-accessibility-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ios-release-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
       - name: Select an installed iPhone simulator
         run: |
           xcrun simctl list --json > "$RUNNER_TEMP/simulators.json"
@@ -85,6 +88,20 @@ jobs:
           if-no-files-found: error
           retention-days: 3
           compression-level: 0
+      - name: Preserve native compilation cache
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/build
+            ~/.konan
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+      - name: Collect native crash diagnostics
+        if: failure()
+        run: |
+          mkdir -p build/ios-accessibility/crashes
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -name 'test*.ips' \
+            -exec cp {} build/ios-accessibility/crashes/ \; 2>/dev/null || true
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -93,5 +110,6 @@ jobs:
           path: |
             shared/build/test-results/iosSimulatorArm64Test/
             build/ios-accessibility/build.log
+            build/ios-accessibility/crashes/
           if-no-files-found: ignore
           retention-days: 3
