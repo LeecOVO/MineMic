@@ -18,14 +18,9 @@ concurrency:
 
 jobs:
   screenshots:
-    name: Capture ${{ matrix.device }}
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        device: ${{ inputs.device == 'both' && fromJSON('["ipad13", "iphone"]') || fromJSON(format('["{0}"]', inputs.device)) }}
+    name: Capture ${{ inputs.device }}
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       MINEMIC_NATIVE_JOBS: '2'
     steps:
@@ -66,7 +61,7 @@ jobs:
           set -o pipefail
           xcodebuild -project iosApp/iosApp.xcodeproj -scheme MineMicScreenshots \
             -configuration Debug -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/ios-screenshots CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath build/ios-screenshots -jobs 2 CODE_SIGNING_ALLOWED=NO \
             build-for-testing 2>&1 | tee build/ios-screenshots-build.log
       - name: Save native build cache
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -78,7 +73,7 @@ jobs:
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - name: Capture native screenshots
         env:
-          SCREENSHOT_DEVICE: ${{ matrix.device }}
+          SCREENSHOT_DEVICE: ${{ inputs.device }}
         run: |
           ./gradlew --stop
           python3 scripts/capture-ios-screenshots.py \
@@ -87,7 +82,7 @@ jobs:
       - name: Upload screenshots
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: MineMic-AppStore-screenshots-${{ matrix.device }}
+          name: MineMic-AppStore-screenshots-${{ inputs.device }}
           path: build/app-store-screenshots/
           if-no-files-found: error
           retention-days: 7
@@ -95,7 +90,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: MineMic-screenshot-diagnostics-${{ matrix.device }}
+          name: MineMic-screenshot-diagnostics-${{ inputs.device }}
           path: |
             build/ios-screenshots-build.log
             build/simulator-inventory.json
