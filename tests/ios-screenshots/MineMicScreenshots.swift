@@ -9,7 +9,7 @@ final class MineMicScreenshots: XCTestCase {
                                "-MineMic.liveActivity.enabled", "NO"]
         app.launch()
         XCTAssertTrue(text("连接电脑").waitForExistence(timeout: 30))
-        XCTAssertTrue(audioHeader().label.contains("均已关闭"), "Each scene must start with fresh audio settings")
+        XCTAssertTrue(spokenState(audioHeader()).contains("均已关闭"), "Each scene must start with fresh audio settings")
     }
 
     override func tearDownWithError() throws {
@@ -106,6 +106,12 @@ final class MineMicScreenshots: XCTestCase {
 
     private func audioHeader() -> XCUIElement { button("声音处理") }
 
+    private func spokenState(_ element: XCUIElement) -> String {
+        // The accessible name and current state are separate after the VoiceOver
+        // improvements. Read both without changing the application's semantics.
+        element.label + " " + (element.value as? String ?? "")
+    }
+
     private func showProcessing() {
         top()
         // The tablet can show the audio controls from the top without cutting the title.
@@ -142,19 +148,19 @@ final class MineMicScreenshots: XCTestCase {
             gain.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
                 .press(forDuration: 0.1, thenDragTo: gain.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)))
             settle()
-            if audioHeader().label.contains("收音 +") { break }
+            if spokenState(audioHeader()).contains("收音 +") { break }
         }
-        XCTAssertTrue(audioHeader().label.contains("收音 +"), "Input gain must be enabled in the screenshot")
+        XCTAssertTrue(spokenState(audioHeader()).contains("收音 +"), "Input gain must be enabled in the screenshot")
         tap(toggle("降噪"))
         tap(button("桌面游戏"))
-        XCTAssertTrue(audioHeader().label.contains("桌面游戏降噪"), "Desktop noise suppression must be selected")
+        XCTAssertTrue(spokenState(audioHeader()).contains("桌面游戏降噪"), "Desktop noise suppression must be selected")
         tap(toggle("回声抑制"))
         XCTAssertTrue(text("处理监测").waitForExistence(timeout: 10))
 
         tap(button("锁屏控制"))
         let lockScreen = toggle("在锁屏上显示")
         reveal(lockScreen)
-        if lockScreen.isEnabled, button("锁屏控制").label.contains("已关闭") { tap(lockScreen) }
+        if lockScreen.isEnabled, spokenState(button("锁屏控制")).contains("已关闭") { tap(lockScreen) }
         tap(button("锁屏控制"))
         showProcessing()
     }
