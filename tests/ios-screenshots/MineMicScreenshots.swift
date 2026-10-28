@@ -93,9 +93,9 @@ final class MineMicScreenshots: XCTestCase {
     private func reveal(_ element: XCUIElement) {
         for _ in 0..<10 {
             if element.exists && element.isHittable &&
-                element.frame.minY >= app.frame.minY + 80 &&
-                element.frame.maxY <= app.frame.maxY - 80 { return }
-            if element.exists && element.frame.maxY < app.frame.minY + 80 { drag(from: 0.3, to: 0.65) }
+                element.frame.minY >= app.frame.minY &&
+                element.frame.maxY <= app.frame.maxY - 20 { return }
+            if element.exists && element.frame.minY < app.frame.minY { drag(from: 0.3, to: 0.65) }
             else { drag(from: 0.75, to: 0.42) }
         }
         XCTAssertTrue(element.isHittable, "Cannot reveal \(element.label)")
@@ -117,6 +117,16 @@ final class MineMicScreenshots: XCTestCase {
         element.label + " " + (element.value as? String ?? "")
     }
 
+    private func setExpanded(_ title: String, _ expanded: Bool) {
+        let expected = expanded ? "已展开" : "已收起"
+        for _ in 0..<3 {
+            let header = button(title)
+            if spokenState(header).contains(expected) { return }
+            tap(header)
+        }
+        XCTAssertTrue(spokenState(button(title)).contains(expected), "Disclosure must reach its requested state")
+    }
+
     private func showProcessing() {
         top()
         // The tablet can show the audio controls from the top without cutting the title.
@@ -135,7 +145,7 @@ final class MineMicScreenshots: XCTestCase {
     }
 
     private func enableAudioOptions() {
-        tap(audioHeader())
+        setExpanded("声音处理", true)
         // Compose exposes its custom slider as an adjustable Other element on iOS.
         let gain = app.otherElements.matching(NSPredicate(format: "label == %@", "收音增强")).firstMatch
         reveal(gain)
@@ -162,11 +172,11 @@ final class MineMicScreenshots: XCTestCase {
         tap(toggle("回声抑制"))
         XCTAssertTrue(text("处理监测").waitForExistence(timeout: 10))
 
-        tap(button("锁屏控制"))
+        setExpanded("锁屏控制", true)
         let lockScreen = toggle("在锁屏上显示")
         reveal(lockScreen)
         if lockScreen.isEnabled, spokenState(button("锁屏控制")).contains("已关闭") { tap(lockScreen) }
-        tap(button("锁屏控制"))
+        setExpanded("锁屏控制", false)
         showProcessing()
     }
 
