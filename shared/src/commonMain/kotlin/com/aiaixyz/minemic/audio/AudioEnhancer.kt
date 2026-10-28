@@ -18,6 +18,7 @@ internal class AudioEnhancer(
     private val statistics: ((ProcessingStatistics) -> Unit)? = null,
     private val diagnosticFrame: ((String, Long, ByteArray) -> Unit)? = null,
     private val timing: EnhancementTiming? = null,
+    private val execution: AudioProcessingExecution = createAudioProcessingExecution(),
     private val factory: () -> AudioProcessor? = ::createAudioProcessor,
 ) {
     private data class Input(val frame: CapturedAudio, val options: EnhancementOptions,
@@ -30,7 +31,6 @@ internal class AudioEnhancer(
     private var historyCapturedAt: Long? = null
     private val outputTimeline = AudioOutputTimeline() // Worker only.
     private var echoCaptureStartedAt: Long? = null
-    private val execution = createAudioProcessingExecution()
     private val scope = CoroutineScope(SupervisorJob() + execution.dispatcher)
     private val worker: Job
     private data class Report(val statistics: ProcessingStatistics, val message: String)

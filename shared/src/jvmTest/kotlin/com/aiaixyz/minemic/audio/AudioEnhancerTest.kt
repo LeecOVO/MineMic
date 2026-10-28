@@ -5,6 +5,7 @@ import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -44,7 +45,13 @@ class AudioEnhancerTest {
         val echoInputs = mutableListOf<Byte>()
         var buffered = 0
         val enhancer = AudioEnhancer(7, key.copyOf(), time::get, ::hmac,
-            timing = EnhancementTiming(echoDelaySamples = 0, noiseDelaySamples = 0, deskNoiseDelaySamples = 0)) {
+            timing = EnhancementTiming(echoDelaySamples = 0, noiseDelaySamples = 0, deskNoiseDelaySamples = 0),
+            execution = object : AudioProcessingExecution {
+                // This scenario tests frame order and the logical audio clock,
+                // not a CI runner's ability to schedule a thread within 8 ms.
+                override val dispatcher = Dispatchers.Unconfined
+                override fun close() {}
+            }) {
             object : AudioProcessor {
                 override val supportsReferenceResampling = true
                 override fun bufferReference(stereo: ByteArray, valid: Boolean): Boolean { buffered++; return true }
@@ -194,24 +201,43 @@ class AudioEnhancerTest {
     }
     @Test fun slowNativeProcessingCannotHoldSenderOrPublishLateOutput() = runBlocking {
         val entered = AtomicInteger(); val destroyed = AtomicInteger()
-        val enhancer = AudioEnhancer(7, key, ::now, ::hmac) { object : AudioProcessor {
+        val processingStarted = CountDownLatch(1); val releaseProcessing = CountDownLatch(1)
+        val time = AtomicLong(1000000)
+        val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        withContext(dispatcher) { /* Warm the worker independently of the sender deadline. */ }
+        val enhancer = AudioEnhancer(7, key, time::get, ::hmac,
+            execution = object : AudioProcessingExecution {
+                override val dispatcher = dispatcher
+                override fun close() = dispatcher.close()
+            }) { object : AudioProcessor {
             override fun render(stereo: ByteArray) = false
             override fun process(mono: ByteArray, noise: Boolean, echo: Boolean): ByteArray {
-                entered.incrementAndGet(); Thread.sleep(100); return ByteArray(960) { 99 }
+                entered.incrementAndGet(); processingStarted.countDown()
+                check(releaseProcessing.await(5, TimeUnit.SECONDS))
+                return ByteArray(960) { 99 }
             }
             override fun resetEcho() {}
             override fun close() { destroyed.incrementAndGet() }
         } }
         try {
-            val raw = ByteArray(960) { 15 }; val started = now()
-            repeat(12) {
-                val out = enhancer.enhance(CapturedAudio(raw, now()), EnhancementOptions(noise = true), null)
-                assertSame(raw, out.pcm)
+            val raw = ByteArray(960) { 15 }
+            // Keep native processing blocked, while every sender call must still
+            // return the dry frame. A test watchdog allows scheduler noise; the
+            // application's real 8 ms deadline remains unchanged.
+            val first = async { enhancer.enhance(CapturedAudio(raw, time.get()), EnhancementOptions(noise = true), null) }
+            withContext(Dispatchers.IO) { assertTrue(processingStarted.await(2, TimeUnit.SECONDS)) }
+            withTimeout(2000) {
+                assertSame(raw, first.await().pcm)
+                repeat(12) {
+                    val out = enhancer.enhance(CapturedAudio(raw, time.get()), EnhancementOptions(noise = true), null)
+                    assertSame(raw, out.pcm)
+                }
             }
-            assertTrue(now() - started < 400000, "sender was blocked by native processing")
-            assertTrue(entered.get() <= 3, "unbounded processing backlog")
-        } finally { enhancer.close() }
+            assertEquals(1, entered.get(), "sender calls must not enter the blocked native processor")
+            time.addAndGet(9000) // Both in-flight and queued work are now past their deadlines.
+        } finally { releaseProcessing.countDown(); enhancer.close() }
         withTimeout(1000) { while (destroyed.get() == 0) delay(5) }
+        assertEquals(1, entered.get(), "cancelled or expired queued frames must never reach native processing")
     }
     @Test fun unpairedReferenceCannotKeepStaleEchoAdaptationAlive() = runBlocking {
         val time = AtomicLong(1000000)
