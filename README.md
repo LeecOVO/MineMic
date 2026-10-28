@@ -2,7 +2,7 @@
 
 将 Android 手机或 iPhone 变成电脑麦克风，通过局域网传输声音。移动端采用 Kotlin Multiplatform + Compose Multiplatform，配合独立的 [MineMic-PC](https://github.com/LeecOVO/MineMic-PC) 使用。
 
-当前版本：**0.1.0-ea.6 · Early Access**。项目处于初始开发阶段，版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
+当前移动端版本：**1.0.0 · 正式版**。版本规则见 [VERSIONING.md](docs/VERSIONING.md)。
 
 ## 使用
 
@@ -100,6 +100,8 @@ python3 scripts/package-ios-unsigned.py /path/to/device.ipa /path/to/MineMic-VER
 
 ## Actions 发布
 
-推送与 `version.xcconfig` 一致的 `v版本号` 标签，运行 Mobile release 工作流。Actions 构建 Android Release APK 和完全无签名的 iOS IPA，校验版本、签名状态与 SHA-256 后发布 EA Release；构建失败不会公开不完整的新版。
+推送与 `version.xcconfig` 一致的 `v版本号` 标签，运行 Mobile release 工作流。Actions 构建 Android Release APK 和完全无签名的 iOS IPA，校验版本、签名状态与 SHA-256 后发布；含 `-beta.N` 等后缀的版本标为预发布，正式版本不带后缀。构建失败不会公开不完整的新版。
+
+App Store 单独使用 iOS App Store archive 工作流，仅构建 iOS Release 的无签名归档和 IPA，不自动发布 GitHub Release。下载并校验归档后，在本机完成 Apple 分发签名与上传，证书和描述文件不进入 Actions。
 
 Android 覆盖安装使用现有 EA 测试证书，保存在仓库加密 Secret `ANDROID_EA_KEYSTORE_BASE64`，不得将密钥加入源码或构建附件。iOS 构建不使用 Apple 证书或描述文件。本地签名可放在忽略的 `iosApp/Configuration/Local.xcconfig`。

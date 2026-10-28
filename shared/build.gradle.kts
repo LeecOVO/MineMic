@@ -9,8 +9,16 @@ plugins {
 
 val generateAppVersion by tasks.registering(Sync::class) {
     val appVersion = rootProject.extra["mineMicVersion"] as String
+    val appStage = when {
+        "-beta." in appVersion -> "Beta 测试版"
+        "-rc." in appVersion -> "候选发布版"
+        "-ea." in appVersion -> "Early Access 预发布"
+        '-' in appVersion -> "开发预览"
+        else -> "正式版"
+    }
     inputs.property("appVersion", appVersion)
-    from("src/versionTemplate") { expand("appVersion" to appVersion) }
+    inputs.property("appStage", appStage)
+    from("src/versionTemplate") { expand("appVersion" to appVersion, "appStage" to appStage) }
     into(layout.buildDirectory.dir("generated/minemicVersion"))
 }
 

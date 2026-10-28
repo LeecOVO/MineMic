@@ -32,7 +32,8 @@ jobs:
           from pathlib import Path
           config = dict(re.findall(r'^([A-Z_]+)=(.+)$', Path('version.xcconfig').read_text(), re.M))
           version, build = config['MINEMIC_VERSION'], config['CURRENT_PROJECT_VERSION']
-          assert re.fullmatch(r'\d+\.\d+\.\d+-(ea|dev)\.\d+', version), 'Expected an EA/development version'
+          number = r'(?:0|[1-9]\d*)'
+          assert re.fullmatch(rf'{number}\.{number}\.{number}(?:-(?:ea|dev|beta|rc)\.{number})?', version), 'Expected a release or numbered prerelease version'
           assert build.isdecimal() and int(build) > 0
           assert config['MARKETING_VERSION'] == version.split('-')[0]
           assert os.environ['GITHUB_REF_TYPE'] == 'tag', 'Run this workflow on a release tag'
@@ -230,13 +231,17 @@ jobs:
           test -f "MineMic-$VERSION-android.apk"
           test -f "MineMic-$VERSION-ios-unsigned.ipa"
           sha256sum -c "MineMic-$VERSION-android.apk.sha256" "MineMic-$VERSION-ios-unsigned.ipa.sha256"
-      - name: Publish verified EA release
+      - name: Publish verified release
         run: |
           tag="v$VERSION"
           if gh release view "$tag" --json isDraft >/dev/null 2>&1; then
             test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true || { echo 'Refusing to overwrite a published release.'; exit 1; }
           else
-            gh release create "$tag" --verify-tag --draft --prerelease --title "MineMic v$VERSION" --notes-file "docs/releases/$tag.md"
+            gh release create "$tag" --verify-tag --draft --title "MineMic v$VERSION" --notes-file "docs/releases/$tag.md"
           fi
           gh release upload "$tag" dist/* --clobber
-          gh release edit "$tag" --draft=false --prerelease --latest=false --title "MineMic v$VERSION" --notes-file "docs/releases/$tag.md"
+          if [[ "$VERSION" == *-* ]]; then
+            gh release edit "$tag" --draft=false --prerelease --latest=false --title "MineMic v$VERSION" --notes-file "docs/releases/$tag.md"
+          else
+            gh release edit "$tag" --draft=false --prerelease=false --latest --title "MineMic v$VERSION" --notes-file "docs/releases/$tag.md"
+          fi

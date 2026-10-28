@@ -3,5 +3,5 @@ package com.aiaixyz.minemic
 // Generated from the root version.xcconfig during the Gradle build.
 internal object AppVersion {
     const val name = "${appVersion}"
-    const val stage = "开发预览 · 音频增强"
+    const val stage = "${appStage}"
 }

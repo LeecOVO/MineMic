@@ -1,0 +1,122 @@
+name: iOS App Store archive
+
+on:
+  push:
+    branches: ['codex/app-store-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-app-store-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: macos-26
+    timeout-minutes: 55
+    env:
+      MINEMIC_NATIVE_JOBS: '2'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: zulu
+          java-version: '21'
+          cache: gradle
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Read version and bound build concurrency
+        run: |
+          xcodebuild -version
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          config = dict(re.findall(r'^([A-Z_]+)=(.+)$', Path('version.xcconfig').read_text(), re.M))
+          version = config['MINEMIC_VERSION']
+          number = r'(?:0|[1-9]\d*)'
+          assert re.fullmatch(rf'{number}\.{number}\.{number}(?:-(?:beta|rc)\.{number})?', version)
+          assert config['MARKETING_VERSION'] == version.split('-')[0]
+          assert config['CURRENT_PROJECT_VERSION'].isdecimal()
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f"VERSION={version}\nBUILD_NUMBER={config['CURRENT_PROJECT_VERSION']}\n")
+          PY
+          printf '\norg.gradle.jvmargs=-Xmx2304m -Dfile.encoding=UTF-8\nkotlin.daemon.jvmargs=-Xmx1536m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> gradle.properties
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: native-cache
+        with:
+          path: |
+            native/build
+            ~/.konan
+          key: ios-release-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ios-accessibility-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-apm.py', 'native/**', 'gradle/libs.versions.toml') }}
+      - name: Run shared regression tests
+        run: ./gradlew :shared:jvmTest --max-workers=2 --no-parallel --console=plain
+      - name: Archive iOS Release without Apple credentials
+        run: |
+          set -o pipefail
+          mkdir -p build/ios-app-store
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
+            -configuration Release -destination 'generic/platform=iOS' -jobs 2 \
+            -archivePath build/ios-app-store/MineMic.xcarchive \
+            -derivedDataPath build/ios-app-store/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' DEVELOPMENT_TEAM='' \
+            archive 2>&1 | tee build/ios-app-store/build.log
+      - name: Audit archive and package unsigned artifacts
+        run: |
+          python3 - <<'PY'
+          import os, plistlib, subprocess
+          from pathlib import Path
+          archive = Path('build/ios-app-store/MineMic.xcarchive')
+          app = archive/'Products/Applications/MineMic.app'
+          for bundle, identifier in ((app, 'com.aiaixyz.minemic'), (app/'PlugIns/MineMicLiveActivity.appex', 'com.aiaixyz.minemic.LiveActivity')):
+              info = plistlib.loads((bundle/'Info.plist').read_bytes())
+              assert info['CFBundleIdentifier'] == identifier
+              assert info['CFBundleShortVersionString'] == os.environ['VERSION'].split('-')[0]
+              assert info['CFBundleVersion'] == os.environ['BUILD_NUMBER']
+              assert info['CFBundleDevelopmentRegion'] == 'zh-Hans'
+              assert 'zh-Hans' in info['CFBundleLocalizations']
+              assert info['ITSAppUsesNonExemptEncryption'] is False
+              assert (bundle/'PrivacyInfo.xcprivacy').is_file()
+              binary = bundle/info['CFBundleExecutable']
+              assert 'LC_CODE_SIGNATURE' not in subprocess.check_output(['otool', '-l', str(binary)], text=True)
+          assert plistlib.loads((app/'Info.plist').read_bytes())['MineMicVersion'] == os.environ['VERSION']
+          assert (app/'AbseilPrivacy.bundle/PrivacyInfo.xcprivacy').is_file()
+          assert not list(archive.rglob('embedded.mobileprovision'))
+          assert not list(archive.rglob('_CodeSignature'))
+          print('Release identifiers, versions, Chinese localization, encryption declarations and privacy manifests verified.')
+          PY
+          mkdir -p dist build/ios-app-store/package/Payload
+          ditto build/ios-app-store/MineMic.xcarchive/Products/Applications/MineMic.app build/ios-app-store/package/Payload/MineMic.app
+          ditto -c -k --norsrc --noextattr --keepParent build/ios-app-store/package/Payload build/ios-app-store/input.ipa
+          python3 scripts/package-ios-unsigned.py build/ios-app-store/input.ipa "dist/MineMic-$VERSION-ios-unsigned.ipa"
+          ditto -c -k --norsrc --noextattr --keepParent build/ios-app-store/MineMic.xcarchive "dist/MineMic-$VERSION-ios-unsigned.xcarchive.zip"
+          printf '%s\n' "$GITHUB_SHA" > dist/source-commit.txt
+          cd dist
+          shasum -a 256 "MineMic-$VERSION-ios-unsigned.xcarchive.zip" > "MineMic-$VERSION-ios-unsigned.xcarchive.zip.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MineMic-AppStore-${{ env.VERSION }}-build-${{ env.BUILD_NUMBER }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            native/build
+            ~/.konan
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: MineMic-AppStore-build-diagnostics
+          path: build/ios-app-store/build.log
+          if-no-files-found: ignore
+          retention-days: 3
