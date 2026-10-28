@@ -8,6 +8,11 @@ on:
         type: choice
         options: [both, ipad13, iphone]
         default: iphone
+      scenes:
+        description: Screenshot scenes
+        type: choice
+        options: [all, processing]
+        default: all
 
 permissions:
   contents: read
@@ -18,7 +23,7 @@ concurrency:
 
 jobs:
   screenshots:
-    name: Capture ${{ inputs.device }}
+    name: Capture ${{ inputs.device }} / ${{ inputs.scenes }}
     runs-on: macos-26
     timeout-minutes: 40
     env:
@@ -74,15 +79,17 @@ jobs:
       - name: Capture native screenshots
         env:
           SCREENSHOT_DEVICE: ${{ inputs.device }}
+          SCREENSHOT_SCENES: ${{ inputs.scenes }}
         run: |
           ./gradlew --stop
           python3 scripts/capture-ios-screenshots.py \
             --app build/ios-screenshots/Build/Products/Debug-iphonesimulator/MineMic.app \
-            --device "$SCREENSHOT_DEVICE"
+            --device "$SCREENSHOT_DEVICE" --scenes "$SCREENSHOT_SCENES"
       - name: Upload screenshots
+        if: success() || (failure() && hashFiles('build/app-store-screenshots/**/*.png') != '')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: MineMic-AppStore-screenshots-${{ inputs.device }}
+          name: MineMic-AppStore-screenshots-${{ inputs.device }}-${{ inputs.scenes }}
           path: build/app-store-screenshots/
           if-no-files-found: error
           retention-days: 7

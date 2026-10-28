@@ -62,7 +62,10 @@ final class MineMicScreenshots: XCTestCase {
     }
 
     private func toggle(_ prefix: String) -> XCUIElement {
-        app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
+        let predicate = NSPredicate(format: "label BEGINSWITH %@", prefix)
+        let result = app.switches.matching(predicate).firstMatch
+        // A disabled Compose switch can be exported as Other by XCTest.
+        return result.exists ? result : app.descendants(matching: .any).matching(predicate).firstMatch
     }
 
     private func tap(_ element: XCUIElement) {
@@ -89,7 +92,9 @@ final class MineMicScreenshots: XCTestCase {
 
     private func reveal(_ element: XCUIElement) {
         for _ in 0..<10 {
-            if element.exists && element.isHittable { return }
+            if element.exists && element.isHittable &&
+                element.frame.minY >= app.frame.minY + 80 &&
+                element.frame.maxY <= app.frame.maxY - 80 { return }
             if element.exists && element.frame.maxY < app.frame.minY + 80 { drag(from: 0.3, to: 0.65) }
             else { drag(from: 0.75, to: 0.42) }
         }

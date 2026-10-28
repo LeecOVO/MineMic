@@ -92,7 +92,7 @@ def select_device(device_class):
     raise RuntimeError(f"No available iOS 26+ runtime for {device_class}. Install one on the runner.")
 
 
-def export_images(result_bundle, export_path, output, device_class):
+def export_images(result_bundle, export_path, output, device_class, scenes):
     from PIL import Image, ImageStat
 
     run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result_bundle), "--output-path", str(export_path))
@@ -101,7 +101,7 @@ def export_images(result_bundle, export_path, output, device_class):
     for test in attachments:
         for attachment in test["attachments"]:
             name = attachment["suggestedHumanReadableName"]
-            scene = next((scene for scene in SCENES if name.startswith(scene)), None)
+            scene = next((scene for scene in scenes if name.startswith(scene)), None)
             if scene is None:
                 continue
             source = export_path / attachment["exportedFileName"]
@@ -120,12 +120,12 @@ def export_images(result_bundle, export_path, output, device_class):
                 image.save(path)
             images[scene] = {"file": path.name, "scene": scene, "width": size[0], "height": size[1],
                              "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-    if set(images) != set(SCENES):
-        raise RuntimeError(f"Missing screenshot scenes: {set(SCENES) - set(images)}")
-    return [images[scene] for scene in SCENES]
+    if set(images) != set(scenes):
+        raise RuntimeError(f"Missing screenshot scenes: {set(scenes) - set(images)}")
+    return [images[scene] for scene in scenes]
 
 
-def capture(app, output, derived_data, device_classes):
+def capture(app, output, derived_data, device_classes, scenes):
     app = app.resolve()
     with (app / "Info.plist").open("rb") as stream:
         info = plistlib.load(stream)
@@ -138,6 +138,7 @@ def capture(app, output, derived_data, device_classes):
         "xcode": run("xcodebuild", "-version"),
         "captureMethod": "XCUITest on the real app; native pixels, no resizing or padding",
         "audioNote": "Processing options are selected in the app UI; no PC connection or microphone capture is started.",
+        "scenes": list(scenes),
         "devices": [],
     }
     output.mkdir(parents=True, exist_ok=True)
@@ -153,13 +154,16 @@ def capture(app, output, derived_data, device_classes):
                    "--wifiMode", "active", "--wifiBars", "3", "--batteryState", "charged", "--batteryLevel", "100")
             result_bundle = diagnostics / f"{device_class}.xcresult"
             log_path = diagnostics / f"{device_class}.log"
+            tests = [] if scenes == SCENES else [
+                f"-only-testing:MineMicScreenshots/MineMicScreenshots/{name}" for name in
+                ("test02ProcessingDark", "test04ProcessingLight")]
             returncode = run_logged([
                     "xcodebuild", "test-without-building", "-project", str(ROOT / "iosApp/iosApp.xcodeproj"),
                     "-scheme", "MineMicScreenshots", "-configuration", "Debug",
                     "-destination", f"id={udid}", "-derivedDataPath", str(derived_data.resolve()),
                     "-resultBundlePath", str(result_bundle), "-parallel-testing-enabled", "NO",
                     "-maximum-concurrent-test-simulator-destinations", "1", "CODE_SIGNING_ALLOWED=NO",
-                ], log_path, timeout=1200)
+                ] + tests, log_path, timeout=1200)
             export_path = diagnostics / f"{device_class}-attachments"
             if returncode:
                 if result_bundle.exists():
@@ -169,11 +173,12 @@ def capture(app, output, derived_data, device_classes):
                 raise RuntimeError(f"Screenshot UI tests failed for {device_name}; see the diagnostic artifact")
             device_output = output / device_class
             device_output.mkdir(parents=True, exist_ok=True)
-            images = export_images(result_bundle, export_path, device_output, device_class)
+            images = export_images(result_bundle, export_path, device_output, device_class, scenes)
             manifest["devices"].append({"deviceClass": device_class, "device": device_name,
                                         "runtime": runtime["version"], "runtimeIdentifier": runtime["identifier"],
                                         "images": images})
-            print(f"Captured and validated all five scenes for {device_name}", flush=True)
+            (output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+            print(f"Captured and validated {len(scenes)} scenes for {device_name}", flush=True)
         finally:
             simctl("status_bar", udid, "clear", check=False)
             simctl("shutdown", udid, check=False)
@@ -188,6 +193,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, default=ROOT / "build/app-store-screenshots")
     parser.add_argument("--derived-data", type=Path, default=ROOT / "build/ios-screenshots")
     parser.add_argument("--device", choices=("both", "ipad13", "iphone"), default="both")
+    parser.add_argument("--scenes", choices=("all", "processing"), default="all")
     arguments = parser.parse_args()
     capture(arguments.app, arguments.output, arguments.derived_data,
-            ("ipad13", "iphone") if arguments.device == "both" else (arguments.device,))
+            ("ipad13", "iphone") if arguments.device == "both" else (arguments.device,),
+            SCENES if arguments.scenes == "all" else (SCENES[1], SCENES[3]))
